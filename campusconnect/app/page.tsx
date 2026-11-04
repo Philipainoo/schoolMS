@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import type { ChangeEvent } from "react";
 import { getSupabase } from "@/lib/supabase";
+import MessagingWorkspace from "@/app/components/MessagingWorkspace";
 import type { User } from "@supabase/supabase-js";
 
 type Profile = { user_id: string; display_name: string; username: string; avatar_path: string | null; bio: string | null; major: string | null; department: string | null; graduation_year: number | null };
@@ -999,29 +1000,7 @@ export default function Home() {
             </div>
             </div>
             <div className={activeView === "messages" ? "view-content" : "view-content hidden"}>
-              <div className="messages-view">
-                <div className="feed-heading"><div><div className="eyebrow">PRIVATE CAMPUS CHATS</div><h1>Messages</h1><p className="muted">Connect one-to-one with verified UEW members.</p></div><div className="campus-pill"><span/> PRIVATE</div></div>
-                <form className="message-search-card card" onSubmit={findMessageMember}>
-                  <label htmlFor="message-member-search">Start a conversation</label>
-                  <div className="message-search-row"><input id="message-member-search" value={memberSearch} onChange={(e) => setMemberSearch(e.target.value)} placeholder="Search by exact username, e.g. ama_owusu"/><button className="primary-button compact" disabled={messageSearchBusy || !memberSearch.trim()}>{messageSearchBusy ? "Searching…" : "Find member"}</button></div>
-                  {memberResult && <div className="message-member-result"><div><strong>{memberResult.display_name}</strong><span>@{memberResult.username}</span></div><button type="button" className="primary-button compact" disabled={messageBusy} onClick={() => void startDirectConversation(memberResult)}>{messageBusy ? "Opening…" : "Message"}</button></div>}
-                </form>
-                <div className="message-workspace card">
-                  <section className="conversation-list">
-                    <div className="groups-section-heading"><h2>Your chats</h2><span>{conversations.length}</span></div>
-                    {conversations.length === 0 ? <p className="message-empty-copy">No conversations yet. Search for a UEW username above to start one.</p> : conversations.map((conversation) => <button type="button" className={activeConversationId === conversation.id ? "conversation-item active" : "conversation-item"} key={conversation.id} onClick={() => void openConversation(conversation.id)}><span className="conversation-avatar">{initials(conversation.peer?.display_name || "UEW")}</span><span className="conversation-item-copy"><strong>{conversation.peer?.display_name || "UEW member"}</strong><small>@{conversation.peer?.username || "campusmember"}</small><span>{conversation.lastMessage ? (conversation.lastMessage.sender_id === user.id ? "You: " : "") + conversation.lastMessage.body : "Start the conversation"}</span></span></button>)}
-                  </section>
-                  <section className="message-thread">
-                    {activeConversationId ? <>
-                      <div className="message-thread-heading"><strong>{conversations.find((item) => item.id === activeConversationId)?.peer?.display_name || "UEW member"}</strong><span>Private conversation</span></div>
-                      <div className="message-thread-body">
-                        {threadMessages.length === 0 ? <div className="message-thread-empty">Say hello and start the conversation.</div> : threadMessages.map((message) => <div key={message.id} className={message.sender_id === user.id ? "message-bubble mine" : "message-bubble"}><p>{message.body}</p><time>{new Date(message.created_at).toLocaleString()}</time></div>)}
-                      </div>
-                      <form className="message-compose" onSubmit={sendDirectMessage}><input value={messageDraft} onChange={(e) => setMessageDraft(e.target.value)} maxLength={10000} placeholder="Write a message…" aria-label="Write a direct message"/><button className="primary-button compact" disabled={messageBusy || !messageDraft.trim()}>{messageBusy ? "Sending…" : "Send"} <span>→</span></button></form>
-                    </> : <div className="message-thread-placeholder"><span>✉</span><strong>Your private conversations</strong><p>Choose a chat or search for a UEW member to begin.</p></div>}
-                  </section>
-                </div>
-              </div>
+              {supabase && user && <MessagingWorkspace supabase={supabase} user={user} />}
             </div>
             <div className={activeView === "events" ? "view-content" : "view-content hidden"}>
               <div className="campus-board-view">
