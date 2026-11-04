@@ -47,10 +47,11 @@ The database already has row-level security enabled. The app uses only the publi
 
 This is a first working web foundation, not a finished production social network. The next increments should add:
 1. Notifications and realtime feed updates.
-3. Groups and membership workflows.
-4. Direct messages and realtime updates.
-5. Campus events and announcements.
-6. Reporting, blocking and moderator tools.
+2. Groups and membership workflows.
+3. Direct messages and realtime updates.
+4. Campus events and announcements.
+5. Reporting, blocking and moderator tools.
+6. An administrator-facing UEW member verification queue and audit trail.
 7. Expo Android client sharing the same Supabase backend.
 
 Before public launch, test the RLS policies using separate student accounts and configure the official UEW eligibility process. The legacy root PHP entry point is deliberately preserved.
