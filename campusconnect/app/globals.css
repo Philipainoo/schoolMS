@@ -164,3 +164,10 @@
 .group-avatar-selected{font-size:9px;color:#4f7658}
 .group-profile-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .conversation-avatar img{width:100%;height:100%;display:block;object-fit:cover;border-radius:inherit}
+
+.group-profile-summary{display:flex;align-items:center;gap:11px;padding:12px 15px;border-bottom:1px solid var(--line);background:#f8fbf8}
+.group-profile-summary-avatar{width:42px;height:42px;flex:none;display:grid;place-items:center;overflow:hidden;border-radius:50%;background:#e6f0e6;color:#356744;font:800 12px Manrope}
+.group-profile-summary-avatar img{width:100%;height:100%;object-fit:cover}
+.group-profile-summary>div{min-width:0;display:grid;gap:4px}
+.group-profile-summary strong{font:800 11px Manrope;color:var(--ink)}
+.group-profile-summary p{margin:0;font-size:9px;line-height:1.5;color:var(--muted);overflow-wrap:anywhere}
