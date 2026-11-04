@@ -19,6 +19,7 @@ export default function Home() {
     try { return getSupabase(); } catch { return null; }
   }, []);
   const [user, setUser] = useState<User | null>(null);
+  const [verificationStatus, setVerificationStatus] = useState<"pending" | "verified" | "suspended" | null>(null);
   const [profiles, setProfiles] = useState<Record<string, Profile>>({});
   const [avatarUrls, setAvatarUrls] = useState<Record<string, string>>({});
   const [myProfile, setMyProfile] = useState<Profile | null>(null);
@@ -102,13 +103,28 @@ export default function Home() {
     supabase.auth.getSession().then(({ data }) => setUser(data.session?.user ?? null));
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
+      if (!session?.user) setVerificationStatus(null);
     });
     return () => listener.subscription.unsubscribe();
   }, [supabase]);
 
   useEffect(() => {
-    if (user) void loadFeed();
-  }, [user]);
+    let active = true;
+    async function checkVerification() {
+      if (!supabase || !user) { setVerificationStatus(null); return; }
+      setVerificationStatus(null);
+      const { data, error } = await supabase.from("users").select("verification_status").eq("id", user.id).single();
+      if (!active) return;
+      if (error) { setNotice("We couldn't check your campus verification status. Please refresh or contact support."); return; }
+      setVerificationStatus(data.verification_status as "pending" | "verified" | "suspended");
+    }
+    void checkVerification();
+    return () => { active = false; };
+  }, [supabase, user]);
+
+  useEffect(() => {
+    if (user && verificationStatus === "verified") void loadFeed();
+  }, [user, verificationStatus]);
 
   async function authenticate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -295,6 +311,17 @@ export default function Home() {
             </form>
             <p className="fine-print">Email confirmation is required. Confirming an email address does not by itself verify current UEW enrolment. Official UEW email-domain eligibility is awaiting confirmation.</p>
             {notice && <p className="notice" role="status">{notice}</p>}
+          </div>
+        </section>
+      ) : verificationStatus !== "verified" ? (
+        <section className="verification-layout">
+          <div className="verification-card card">
+            <div className="verification-icon">{verificationStatus === "suspended" ? "!" : "⌛"}</div>
+            <div className="eyebrow">UEW ACCOUNT CHECK</div>
+            <h1>{verificationStatus === "suspended" ? "Account access paused" : verificationStatus === "pending" ? "Your account is awaiting verification" : "Checking your campus account…"}</h1>
+            <p>{verificationStatus === "pending" ? "Your email sign-in is confirmed, but CampusConnect still needs an authorised UEW verification before you can access the campus community. This helps keep the network limited to eligible members." : verificationStatus === "suspended" ? "Your account is currently suspended. Please contact the CampusConnect support team or your campus administrator for help." : "Please wait while we check your campus membership status."}</p>
+            {verificationStatus === "pending" && <p className="verification-note">Email confirmation alone does not prove current enrolment. An authorised campus administrator must complete this step.</p>}
+            <button className="primary-button" onClick={signOut}>Sign out</button>
           </div>
         </section>
       ) : (
