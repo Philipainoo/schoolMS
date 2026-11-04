@@ -46,6 +46,12 @@ export default function Home() {
   const [comments, setComments] = useState<Record<string, Comment[]>>({});
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
   const [commentBusy, setCommentBusy] = useState<string | null>(null);
+  const [reportingPostId, setReportingPostId] = useState<string | null>(null);
+  const [reportReason, setReportReason] = useState("Harassment or bullying");
+  const [reportDetails, setReportDetails] = useState("");
+  const [reportBusy, setReportBusy] = useState(false);
+  const [blockedUserIds, setBlockedUserIds] = useState<string[]>([]);
+  const [blockBusyId, setBlockBusyId] = useState<string | null>(null);
   const [mode, setMode] = useState<"signin" | "signup">("signup");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -160,6 +166,7 @@ export default function Home() {
   useEffect(() => {
     if (user && verificationStatus === "verified") {
       void loadFeed();
+      void loadBlockedUsers();
       void loadGroups();
       void loadCampusBoard();
       void loadNotifications();
@@ -728,6 +735,56 @@ export default function Home() {
     } finally { setCommentBusy(null); }
   }
 
+  async function reportPost(post: Post) {
+    if (!supabase || !user) return;
+    setReportBusy(true); setNotice("");
+    try {
+      const { data: institution, error: institutionError } = await supabase.from("institutions").select("id").eq("slug", "uew").single();
+      if (institutionError || !institution) throw new Error("UEW campus could not be found.");
+      const { error } = await supabase.from("reports").insert({
+        institution_id: institution.id,
+        reporter_id: user.id,
+        target_type: "post",
+        target_id: post.id,
+        reason: reportReason,
+        details: reportDetails.trim() || null,
+      });
+      if (error) throw error;
+      setReportingPostId(null); setReportDetails("");
+      setNotice("Thank you. Your report has been submitted for review.");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Could not submit your report.");
+    } finally { setReportBusy(false); }
+  }
+
+  async function toggleBlockUser(targetUserId: string) {
+    if (!supabase || !user || targetUserId === user.id) return;
+    setBlockBusyId(targetUserId); setNotice("");
+    try {
+      if (blockedUserIds.includes(targetUserId)) {
+        const { error } = await supabase.from("user_blocks").delete().eq("blocker_id", user.id).eq("blocked_id", targetUserId);
+        if (error) throw error;
+        setBlockedUserIds((current) => current.filter((id) => id !== targetUserId));
+        setNotice("Member unblocked.");
+      } else {
+        const { error } = await supabase.from("user_blocks").insert({ blocker_id: user.id, blocked_id: targetUserId });
+        if (error) throw error;
+        setBlockedUserIds((current) => [...current, targetUserId]);
+        setNotice("Member blocked. Their posts are hidden from your feed.");
+      }
+      await loadFeed();
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Could not update your block list.");
+    } finally { setBlockBusyId(null); }
+  }
+
+  async function loadBlockedUsers() {
+    if (!supabase || !user) return;
+    const { data, error } = await supabase.from("user_blocks").select("blocked_id").eq("blocker_id", user.id);
+    if (error) { setNotice(error.message); return; }
+    setBlockedUserIds((data ?? []).map((row) => row.blocked_id as string));
+  }
+
   async function signOut() {
     if (!supabase) return;
     await supabase.auth.signOut();
@@ -738,7 +795,7 @@ export default function Home() {
   }
 
   const activeGroup = groups.find((group) => group.id === activeGroupId) ?? null;
-  const visiblePosts = posts.filter((post) => filter === "all" || post.channel === filter);
+  const visiblePosts = posts.filter((post) => (filter === "all" || post.channel === filter) && !blockedUserIds.includes(post.author_id));
   const initials = (name: string) => name.split(" ").map((part) => part[0]).slice(0, 2).join("").toUpperCase();
 
   if (!supabase) return <main className="setup"><div className="setup-card"><span className="brand-mark">C</span><h1>CampusConnect</h1><p>Connect your Supabase project to launch the UEW campus community.</p><code>cp .env.example .env.local</code><p className="muted">Then add your Supabase public key and restart the development server.</p></div></main>;
@@ -845,8 +902,16 @@ export default function Home() {
                 const person = profiles[post.author_id];
                 const name = person?.display_name || "UEW student";
                 return <article className="post card" key={post.id}>
-                  <div className="post-head">{avatarUrls[post.author_id] ? <img className="avatar avatar-image" src={avatarUrls[post.author_id]} alt=""/> : <div className="avatar">{initials(name)}</div>}<div className="post-author"><strong>{name}</strong><span>@{person?.username || "campusmember"} · {new Date(post.created_at).toLocaleString()}</span></div><span className="channel-tag">{channels.find((item) => item.id === post.channel)?.label}</span></div>
+                  <div className="post-head">{avatarUrls[post.author_id] ? <img className="avatar avatar-image" src={avatarUrls[post.author_id]} alt=""/> : <div className="avatar">{initials(name)}</div>}<div className="post-author"><strong>{name}</strong><span>@{person?.username || "campusmember"} · {new Date(post.created_at).toLocaleString()}</span></div><span className="channel-tag">{channels.find((item) => item.id === post.channel)?.label}</span>{post.author_id !== user.id && <div className="post-safety-actions"><button type="button" onClick={() => { setReportingPostId(reportingPostId === post.id ? null : post.id); setReportDetails(""); }} aria-label="Report post">Report</button><button type="button" disabled={blockBusyId === post.author_id} onClick={() => void toggleBlockUser(post.author_id)}>{blockedUserIds.includes(post.author_id) ? "Unblock" : "Block"}</button></div>}</div>
                   <p className="post-body">{post.body}</p>
+                  {reportingPostId === post.id && <form className="post-report-form" onSubmit={(event) => { event.preventDefault(); void reportPost(post); }}>
+                    <strong>Report this post</strong>
+                    <select value={reportReason} onChange={(event) => setReportReason(event.target.value)}>
+                      <option>Harassment or bullying</option><option>Hate or discrimination</option><option>Spam or scam</option><option>Threats or violence</option><option>Sexual or inappropriate content</option><option>False or misleading information</option><option>Other</option>
+                    </select>
+                    <textarea rows={2} maxLength={1000} value={reportDetails} onChange={(event) => setReportDetails(event.target.value)} placeholder="Add context (optional)"/>
+                    <div><button className="primary-button compact" disabled={reportBusy}>{reportBusy ? "Submitting…" : "Submit report"}</button><button type="button" className="profile-edit-button" onClick={() => setReportingPostId(null)}>Cancel</button></div>
+                  </form>}
                   <div className="comment-list">
                     {(comments[post.id] ?? []).map((comment) => {
                       const commenter = profiles[comment.author_id];
