@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { FormEvent } from "react";
+import type { FormEvent, ReactNode } from "react";
 import type { SupabaseClient, User } from "@supabase/supabase-js";
 
 type ReadMarker = { user_id: string; last_read_at: string | null };
@@ -600,7 +600,7 @@ export default function MessagingWorkspace({ supabase, user }: MessagingWorkspac
     }
   }
 
-  function renderMessage(message: ChatMessage, depth = 0): React.ReactNode {
+  function renderMessage(message: ChatMessage, depth = 0): ReactNode {
     const replies = depth === 0 ? threadMessages.filter((item) => item.parent_message_id === message.id) : [];
     return <div key={message.id} className={"message-thread-item" + (depth > 0 ? " message-thread-reply" : "")}>
       <div className={message.sender_id === user.id ? "message-bubble mine" : "message-bubble"}>
