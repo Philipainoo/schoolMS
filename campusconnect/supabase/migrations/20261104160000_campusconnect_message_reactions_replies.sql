@@ -50,7 +50,7 @@ create index if not exists message_reactions_user_message_idx
 
 alter table public.message_reactions enable row level security;
 
-revoke all on public.message_reactions from anon;
+revoke all on public.message_reactions from anon, authenticated;
 grant select, insert, delete on public.message_reactions to authenticated;
 
 drop policy if exists message_reactions_read_conversation_members on public.message_reactions;
