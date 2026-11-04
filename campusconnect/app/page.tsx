@@ -150,7 +150,7 @@ export default function Home() {
   useEffect(() => {
     let active = true;
     async function checkVerification() {
-      if (!supabase || !user) { setVerificationStatus(null); return; }
+      if (!supabase || !user) { setVerificationStatus(null); setAccountRole(null); return; }
       setVerificationStatus(null);
       const { data, error } = await supabase.from("users").select("verification_status,role").eq("id", user.id).single();
       if (!active) return;
@@ -357,7 +357,7 @@ export default function Home() {
   async function loadCampusBoard() {
     if (!supabase || !user) return;
     const [{ data: eventRows, error: eventError }, { data: announcementRows, error: announcementError }] = await Promise.all([
-      supabase.from("campus_events").select("id,title,description,starts_at,ends_at,location,organizer_id").order("starts_at", { ascending: true }).limit(50),
+      supabase.from("campus_events").select("id,title,description,starts_at,ends_at,location,organizer_id").gte("starts_at", new Date().toISOString()).order("starts_at", { ascending: true }).limit(50),
       supabase.from("announcements").select("id,title,content,priority,published_at,author_id").order("published_at", { ascending: false }).limit(30),
     ]);
     if (eventError) setNotice(eventError.message); else setCampusEvents((eventRows ?? []) as CampusEvent[]);
