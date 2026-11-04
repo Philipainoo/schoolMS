@@ -48,6 +48,7 @@ The app uses existing tables:
 - `groups`
 - `group_members`
 - `group_posts`
+- `group_invites`
 
 The database already has row-level security enabled. The app uses only the public Supabase client and relies on those database policies; no service-role key is included. The `campus-avatars` private Storage bucket is provisioned by the `campusconnect_profile_avatars` migration. Group discussion tables and tenant-safe membership policies are provisioned by `campusconnect_groups_and_discussions`; group creation is protected by the tenant-scoped `groups_insert_owner` policy; a private-schema trigger adds the creator as group admin without exposing a privileged RPC. Private group invitations, verified-recipient acceptance, moderator permissions and column-scoped role changes are provisioned by `campusconnect_group_invites_and_moderation` and `campusconnect_group_role_column_grants`. Storage policies restrict uploads, replacement and deletion to each member's own user-ID folder, and allow reads only for verified campus members. Signed URLs are short-lived.
 
