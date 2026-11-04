@@ -12,6 +12,8 @@ type CampusGroup = { id: string; institution_id: string; owner_id: string; name:
 type GroupPost = { id: string; group_id: string; author_id: string; body: string; created_at: string };
 type GroupMember = { user_id: string; role: "member" | "moderator" | "admin" };
 type GroupInvite = { id: string; group_id: string; invited_by: string; invited_at: string; group_name?: string };
+type DirectMessage = { id: string; conversation_id: string; sender_id: string; body: string; created_at: string };
+type ConversationSummary = { id: string; created_at: string; peer: Profile | null; lastMessage: DirectMessage | null };
 
 const channels = [
   { id: "campus", label: "Campus life" },
@@ -46,7 +48,15 @@ export default function Home() {
   const [filter, setFilter] = useState<"all" | Post["channel"]>("all");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
-  const [activeView, setActiveView] = useState<"feed" | "groups">("feed");
+  const [activeView, setActiveView] = useState<"feed" | "groups" | "messages">("feed");
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+  const [threadMessages, setThreadMessages] = useState<DirectMessage[]>([]);
+  const [messageDraft, setMessageDraft] = useState("");
+  const [messageBusy, setMessageBusy] = useState(false);
+  const [memberSearch, setMemberSearch] = useState("");
+  const [memberResult, setMemberResult] = useState<Profile | null>(null);
+  const [messageSearchBusy, setMessageSearchBusy] = useState(false);
   const [groups, setGroups] = useState<CampusGroup[]>([]);
   const [groupMemberships, setGroupMemberships] = useState<Record<string, string>>({});
   const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
@@ -149,6 +159,134 @@ export default function Home() {
       void loadGroups();
     }
   }, [user, verificationStatus]);
+
+  async function loadConversations() {
+    if (!supabase || !user) return;
+    const { data: rows, error } = await supabase.from("conversations")
+      .select("id,created_at")
+      .eq("is_group", false)
+      .order("created_at", { ascending: false })
+      .limit(60);
+    if (error) { setNotice(error.message); return; }
+    const ids = (rows ?? []).map((row) => row.id as string);
+    if (!ids.length) { setConversations([]); return; }
+    const { data: members, error: membersError } = await supabase.from("conversation_members")
+      .select("conversation_id,user_id").in("conversation_id", ids);
+    if (membersError) { setNotice(membersError.message); return; }
+    const peers = new Map<string, string>();
+    (members ?? []).forEach((member) => {
+      if (member.user_id !== user.id) peers.set(member.conversation_id, member.user_id);
+    });
+    const peerIds = [...new Set([...peers.values()])];
+    const { data: people } = peerIds.length ? await supabase.from("profiles")
+      .select("user_id,display_name,username,avatar_path,bio,major,department,graduation_year")
+      .in("user_id", peerIds) : { data: [] as Profile[] };
+    const peopleMap: Record<string, Profile> = {};
+    ((people ?? []) as Profile[]).forEach((person) => { peopleMap[person.user_id] = person; });
+    if (people) setProfiles((current) => ({ ...current, ...peopleMap }));
+    const { data: messageRows, error: messagesError } = await supabase.from("messages")
+      .select("id,conversation_id,sender_id,body,created_at")
+      .in("conversation_id", ids)
+      .order("created_at", { ascending: false })
+      .limit(300);
+    if (messagesError) { setNotice(messagesError.message); return; }
+    const latest = new Map<string, DirectMessage>();
+    ((messageRows ?? []) as DirectMessage[]).forEach((message) => {
+      if (!latest.has(message.conversation_id)) latest.set(message.conversation_id, message);
+    });
+    const summaries = (rows ?? []).map((row) => ({
+      id: row.id as string,
+      created_at: row.created_at as string,
+      peer: peopleMap[peers.get(row.id as string) || ""] || null,
+      lastMessage: latest.get(row.id as string) || null,
+    })).sort((a, b) => new Date(b.lastMessage?.created_at || b.created_at).getTime() - new Date(a.lastMessage?.created_at || a.created_at).getTime());
+    setConversations(summaries);
+  }
+
+  async function loadThreadMessages(conversationId: string) {
+    if (!supabase) return;
+    const { data, error } = await supabase.from("messages")
+      .select("id,conversation_id,sender_id,body,created_at")
+      .eq("conversation_id", conversationId)
+      .order("created_at", { ascending: true })
+      .limit(150);
+    if (error) { setNotice(error.message); return; }
+    setThreadMessages((data ?? []) as DirectMessage[]);
+  }
+
+  async function findMessageMember(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!supabase || !memberSearch.trim()) return;
+    setMessageSearchBusy(true); setMemberResult(null); setNotice("");
+    try {
+      const handle = memberSearch.trim().replace(/^@/, "").toLowerCase();
+      const { data, error } = await supabase.from("profiles")
+        .select("user_id,display_name,username,avatar_path,bio,major,department,graduation_year")
+        .eq("username", handle).maybeSingle();
+      if (error) throw error;
+      if (!data || data.user_id === user?.id) throw new Error("No other UEW member was found with that username.");
+      setMemberResult(data as Profile);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Could not search for that member.");
+    } finally { setMessageSearchBusy(false); }
+  }
+
+  async function startDirectConversation(person: Profile) {
+    if (!supabase) return;
+    setMessageBusy(true); setNotice("");
+    try {
+      const { data, error } = await supabase.rpc("open_direct_conversation", { target_user_id: person.user_id });
+      if (error) throw error;
+      const conversationId = data as string;
+      setMemberResult(null); setMemberSearch("");
+      setActiveConversationId(conversationId);
+      setActiveView("messages");
+      await loadConversations();
+      await loadThreadMessages(conversationId);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Could not open this conversation.");
+    } finally { setMessageBusy(false); }
+  }
+
+  async function sendDirectMessage(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!supabase || !user || !activeConversationId || !messageDraft.trim()) return;
+    setMessageBusy(true); setNotice("");
+    try {
+      const { data: account, error: accountError } = await supabase.from("users")
+        .select("institution_id").eq("id", user.id).single();
+      if (accountError || !account) throw new Error("Your UEW account could not be loaded.");
+      const { error } = await supabase.from("messages").insert({
+        institution_id: account.institution_id,
+        conversation_id: activeConversationId,
+        sender_id: user.id,
+        body: messageDraft.trim(),
+      });
+      if (error) throw error;
+      setMessageDraft("");
+      await Promise.all([loadThreadMessages(activeConversationId), loadConversations()]);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Your message could not be sent.");
+    } finally { setMessageBusy(false); }
+  }
+
+  async function openConversation(conversationId: string) {
+    setActiveConversationId(conversationId);
+    setThreadMessages([]);
+    await loadThreadMessages(conversationId);
+  }
+
+  useEffect(() => {
+    if (!supabase || !user || verificationStatus !== "verified") return;
+    const channel = supabase.channel("campusconnect-direct-messages-" + user.id)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, (payload) => {
+        const incoming = payload.new as DirectMessage;
+        if (incoming.conversation_id === activeConversationId) void loadThreadMessages(incoming.conversation_id);
+        void loadConversations();
+      })
+      .subscribe();
+    return () => { void supabase.removeChannel(channel); };
+  }, [supabase, user, verificationStatus, activeConversationId]);
 
   async function authenticate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -629,7 +767,7 @@ export default function Home() {
             <div className="side-label">YOUR CAMPUS</div>
             <button className={activeView === "feed" ? "side-link selected" : "side-link"} onClick={() => { setActiveView("feed"); setActiveGroupId(null); }}><span>⌂</span> Home feed</button>
             <button className={activeView === "groups" ? "side-link selected" : "side-link"} onClick={() => { setActiveView("groups"); setActiveGroupId(null); void loadGroups(); }}><span>◎</span> Communities</button>
-            <a className="side-link" href="#messages"><span>✉</span> Messages <em>Soon</em></a>
+            <button className={activeView === "messages" ? "side-link selected" : "side-link"} onClick={() => { setActiveView("messages"); setActiveGroupId(null); void loadConversations(); }}><span>✉</span> Messages</button>
             <a className="side-link" href="#events"><span>▦</span> Campus events <em>Soon</em></a>
             <div className="sidebar-note"><strong>UEW · Winneba</strong><p>A community built around your campus experience.</p></div>
           </aside>
@@ -683,6 +821,31 @@ export default function Home() {
               })}
             </div>
             </div>
+            <div className={activeView === "messages" ? "view-content" : "view-content hidden"}>
+              <div className="messages-view">
+                <div className="feed-heading"><div><div className="eyebrow">PRIVATE CAMPUS CHATS</div><h1>Messages</h1><p className="muted">Connect one-to-one with verified UEW members.</p></div><div className="campus-pill"><span/> PRIVATE</div></div>
+                <form className="message-search-card card" onSubmit={findMessageMember}>
+                  <label htmlFor="message-member-search">Start a conversation</label>
+                  <div className="message-search-row"><input id="message-member-search" value={memberSearch} onChange={(e) => setMemberSearch(e.target.value)} placeholder="Search by exact username, e.g. ama_owusu"/><button className="primary-button compact" disabled={messageSearchBusy || !memberSearch.trim()}>{messageSearchBusy ? "Searching…" : "Find member"}</button></div>
+                  {memberResult && <div className="message-member-result"><div><strong>{memberResult.display_name}</strong><span>@{memberResult.username}</span></div><button type="button" className="primary-button compact" disabled={messageBusy} onClick={() => void startDirectConversation(memberResult)}>{messageBusy ? "Opening…" : "Message"}</button></div>}
+                </form>
+                <div className="message-workspace card">
+                  <section className="conversation-list">
+                    <div className="groups-section-heading"><h2>Your chats</h2><span>{conversations.length}</span></div>
+                    {conversations.length === 0 ? <p className="message-empty-copy">No conversations yet. Search for a UEW username above to start one.</p> : conversations.map((conversation) => <button type="button" className={activeConversationId === conversation.id ? "conversation-item active" : "conversation-item"} key={conversation.id} onClick={() => void openConversation(conversation.id)}><span className="conversation-avatar">{initials(conversation.peer?.display_name || "UEW")}</span><span className="conversation-item-copy"><strong>{conversation.peer?.display_name || "UEW member"}</strong><small>@{conversation.peer?.username || "campusmember"}</small><span>{conversation.lastMessage ? (conversation.lastMessage.sender_id === user.id ? "You: " : "") + conversation.lastMessage.body : "Start the conversation"}</span></span></button>)}
+                  </section>
+                  <section className="message-thread">
+                    {activeConversationId ? <>
+                      <div className="message-thread-heading"><strong>{conversations.find((item) => item.id === activeConversationId)?.peer?.display_name || "UEW member"}</strong><span>Private conversation</span></div>
+                      <div className="message-thread-body">
+                        {threadMessages.length === 0 ? <div className="message-thread-empty">Say hello and start the conversation.</div> : threadMessages.map((message) => <div key={message.id} className={message.sender_id === user.id ? "message-bubble mine" : "message-bubble"}><p>{message.body}</p><time>{new Date(message.created_at).toLocaleString()}</time></div>)}
+                      </div>
+                      <form className="message-compose" onSubmit={sendDirectMessage}><input value={messageDraft} onChange={(e) => setMessageDraft(e.target.value)} maxLength={10000} placeholder="Write a message…" aria-label="Write a direct message"/><button className="primary-button compact" disabled={messageBusy || !messageDraft.trim()}>{messageBusy ? "Sending…" : "Send"} <span>→</span></button></form>
+                    </> : <div className="message-thread-placeholder"><span>✉</span><strong>Your private conversations</strong><p>Choose a chat or search for a UEW member to begin.</p></div>}
+                  </section>
+                </div>
+              </div>
+            </div>
             <div className={activeView === "groups" ? "view-content" : "view-content hidden"}>
               {activeGroup ? (
                 <div className="groups-view">
@@ -726,7 +889,7 @@ export default function Home() {
               )}
             </div>
           </section>
-          <aside className="rightbar"><div className="right-card"><div className="eyebrow">CAMPUS SPOTLIGHT</div><h3>Good things happen when we connect.</h3><p>Find a study partner, share an opportunity or help someone settle into campus life.</p></div><div className="right-card soft"><div className="eyebrow">COMING TO CAMPUSCONNECT</div><p>Private-group invitations</p><p>Direct messages</p><p>Campus events</p><p>Member notifications</p></div></aside>
+          <aside className="rightbar"><div className="right-card"><div className="eyebrow">CAMPUS SPOTLIGHT</div><h3>Good things happen when we connect.</h3><p>Find a study partner, share an opportunity or help someone settle into campus life.</p></div><div className="right-card soft"><div className="eyebrow">COMING TO CAMPUSCONNECT</div><p>Private-group invitations</p><p>Private direct messages</p><p>Campus events</p><p>Member notifications</p></div></aside>
           {notice && <div className="toast" role="status">{notice}</div>}
         </div>
       )}
