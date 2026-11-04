@@ -243,6 +243,12 @@ export default function MessagingWorkspace({ supabase, user }: MessagingWorkspac
   }, [activeConversationId, loadThread]);
 
   useEffect(() => {
+    setReplyToMessage(null);
+    setEditingMessageId(null);
+    setEditDraft("");
+  }, [activeConversationId]);
+
+  useEffect(() => {
     threadEnd.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [threadMessages]);
 
