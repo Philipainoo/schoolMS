@@ -10,6 +10,8 @@ type Post = { id: string; author_id: string; body: string; channel: "campus" | "
 type Comment = { id: string; post_id: string; author_id: string; body: string; created_at: string };
 type CampusGroup = { id: string; institution_id: string; owner_id: string; name: string; description: string | null; category: string | null; visibility: "public" | "private"; created_at: string };
 type GroupPost = { id: string; group_id: string; author_id: string; body: string; created_at: string };
+type GroupMember = { user_id: string; role: "member" | "moderator" | "admin" };
+type GroupInvite = { id: string; group_id: string; invited_by: string; invited_at: string; group_name?: string };
 
 const channels = [
   { id: "campus", label: "Campus life" },
@@ -54,6 +56,9 @@ export default function Home() {
   const [groupDescription, setGroupDescription] = useState("");
   const [groupCategory, setGroupCategory] = useState("Academic");
   const [groupBusy, setGroupBusy] = useState(false);
+  const [groupMembers, setGroupMembers] = useState<GroupMember[]>([]);
+  const [inviteUsername, setInviteUsername] = useState("");
+  const [myGroupInvites, setMyGroupInvites] = useState<GroupInvite[]>([]);
 
   async function loadFeed() {
     if (!supabase) return;
@@ -216,6 +221,7 @@ export default function Home() {
     const map: Record<string, string> = {};
     (memberships ?? []).forEach((item) => { map[item.group_id] = item.role; });
     setGroupMemberships(map);
+    await loadMyGroupInvites();
     const ownerIds = [...new Set(rows.map((group) => group.owner_id))];
     if (ownerIds.length) {
       const { data: owners } = await supabase.from("profiles")
@@ -227,6 +233,111 @@ export default function Home() {
         return next;
       });
     }
+  }
+
+  async function loadMyGroupInvites() {
+    if (!supabase || !user) return;
+    const { data, error } = await supabase.from("group_invites")
+      .select("id,group_id,invited_by,invited_at")
+      .eq("invited_user_id", user.id)
+      .eq("status", "pending")
+      .order("invited_at", { ascending: false })
+      .limit(20);
+    if (error) { setNotice(error.message); return; }
+    const invites = (data ?? []) as GroupInvite[];
+    if (!invites.length) { setMyGroupInvites([]); return; }
+    const ids = [...new Set(invites.map((invite) => invite.group_id))];
+    const { data: groupRows } = await supabase.from("groups").select("id,name").in("id", ids);
+    const names = Object.fromEntries((groupRows ?? []).map((group) => [group.id, group.name]));
+    setMyGroupInvites(invites.map((invite) => ({ ...invite, group_name: names[invite.group_id] || "UEW community" })));
+  }
+
+  async function loadGroupMembers(groupId: string) {
+    if (!supabase) return;
+    const { data, error } = await supabase.from("group_members")
+      .select("user_id,role").eq("group_id", groupId).order("joined_at", { ascending: true });
+    if (error) { setNotice(error.message); return; }
+    const members = (data ?? []) as GroupMember[];
+    setGroupMembers(members);
+    const ids = [...new Set(members.map((member) => member.user_id))];
+    if (!ids.length) return;
+    const { data: people } = await supabase.from("profiles")
+      .select("user_id,display_name,username,avatar_path,bio,major,department,graduation_year")
+      .in("user_id", ids);
+    if (people) setProfiles((current) => {
+      const next = { ...current };
+      (people as Profile[]).forEach((person) => { next[person.user_id] = person; });
+      return next;
+    });
+  }
+
+  async function sendGroupInvite(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!supabase || !user || !activeGroup) return;
+    const handle = inviteUsername.trim().replace(/^@/, "");
+    if (!handle) return;
+    setGroupBusy(true); setNotice("");
+    try {
+      const { data: target, error: targetError } = await supabase.from("profiles")
+        .select("user_id,username").eq("username", handle).maybeSingle();
+      if (targetError || !target) throw new Error("No UEW member was found with that username.");
+      if (target.user_id === user.id) throw new Error("You cannot invite yourself.");
+      const { data: account } = await supabase.from("users").select("institution_id").eq("id", user.id).single();
+      if (!account) throw new Error("Your UEW account could not be loaded.");
+      const { error } = await supabase.from("group_invites").insert({
+        institution_id: account.institution_id,
+        group_id: activeGroup.id,
+        invited_user_id: target.user_id,
+        invited_by: user.id,
+        status: "pending",
+      });
+      if (error) {
+        if (error.code === "23505") throw new Error("That member already has a pending invitation.");
+        throw error;
+      }
+      setInviteUsername("");
+      setNotice("Invitation sent to @" + target.username + ".");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Could not send this invitation.");
+    } finally { setGroupBusy(false); }
+  }
+
+  async function respondToGroupInvite(invite: GroupInvite, status: "accepted" | "declined") {
+    if (!supabase) return;
+    setGroupBusy(true); setNotice("");
+    try {
+      const { error } = await supabase.from("group_invites").update({
+        status, responded_at: new Date().toISOString(),
+      }).eq("id", invite.id);
+      if (error) throw error;
+      await loadMyGroupInvites();
+      await loadGroups();
+      if (status === "accepted") {
+        setActiveView("groups");
+        setActiveGroupId(invite.group_id);
+        await loadGroupPosts(invite.group_id);
+        await loadGroupMembers(invite.group_id);
+        setNotice("Invitation accepted. You are now a community member.");
+      } else {
+        setNotice("Invitation declined.");
+      }
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Could not update this invitation.");
+    } finally { setGroupBusy(false); }
+  }
+
+  async function updateGroupMemberRole(member: GroupMember, role: "member" | "moderator") {
+    if (!supabase || !activeGroup || activeGroup.owner_id !== user?.id) return;
+    setGroupBusy(true); setNotice("");
+    try {
+      const { error } = await supabase.from("group_members").update({ role })
+        .eq("group_id", activeGroup.id).eq("user_id", member.user_id);
+      if (error) throw error;
+      await loadGroupMembers(activeGroup.id);
+      setNotice(role === "moderator" ? "Moderator role assigned." : "Moderator role removed.");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Could not update this member role.");
+    } finally { setGroupBusy(false); }
   }
 
   async function loadGroupPosts(groupId: string) {
@@ -287,6 +398,7 @@ export default function Home() {
       setActiveGroupId(groupId);
       setActiveView("groups");
       await loadGroupPosts(groupId);
+      await loadGroupMembers(groupId);
       setNotice("Your community has been created.");
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Could not create this community.");
@@ -307,6 +419,7 @@ export default function Home() {
       await loadGroups();
       setActiveGroupId(group.id);
       await loadGroupPosts(group.id);
+      await loadGroupMembers(group.id);
       setNotice("You joined the community.");
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Could not join this community.");
@@ -322,6 +435,7 @@ export default function Home() {
       if (error) throw error;
       setActiveGroupId(null);
       setGroupPosts([]);
+      setGroupMembers([]);
       await loadGroups();
       setNotice("You left the community.");
     } catch (error) {
@@ -331,7 +445,7 @@ export default function Home() {
 
   async function deleteGroupPost(post: GroupPost) {
     if (!supabase || !user || !activeGroup) return;
-    if (post.author_id !== user.id && activeGroup.owner_id !== user.id) return;
+    if (post.author_id !== user.id && activeGroup.owner_id !== user.id && groupMemberships[activeGroup.id] !== "moderator" && groupMemberships[activeGroup.id] !== "admin") return;
     if (!window.confirm("Delete this group post? This cannot be undone.")) return;
     setGroupBusy(true); setNotice("");
     try {
@@ -574,8 +688,10 @@ export default function Home() {
                   <button className="back-link" onClick={() => { setActiveGroupId(null); setGroupPosts([]); }}>← All communities</button>
                   <div className="group-detail-card card">
                     <div className="group-detail-top"><div><div className="eyebrow">{activeGroup.category || "UEW COMMUNITY"}</div><h1>{activeGroup.name}</h1><p>{activeGroup.description || "A place for UEW members to connect and share."}</p></div><span className="group-type-tag">PUBLIC</span></div>
-                    <div className="group-detail-meta"><span>{groupMemberships[activeGroup.id] === "admin" ? "Community owner" : "Member"}</span><button className="profile-edit-button" disabled={groupBusy || activeGroup.owner_id === user.id} onClick={() => leaveGroup(activeGroup)}>{activeGroup.owner_id === user.id ? "You own this group" : "Leave group"}</button></div>
+                    <div className="group-detail-meta"><span>{groupMemberships[activeGroup.id] === "admin" ? "Community owner" : groupMemberships[activeGroup.id] === "moderator" ? "Moderator" : "Member"}</span><button className="profile-edit-button" disabled={groupBusy || activeGroup.owner_id === user.id} onClick={() => leaveGroup(activeGroup)}>{activeGroup.owner_id === user.id ? "You own this group" : "Leave group"}</button></div>
                   </div>
+                  {(activeGroup.owner_id === user.id || groupMemberships[activeGroup.id] === "moderator" || groupMemberships[activeGroup.id] === "admin") && <form className="group-invite-card card" onSubmit={sendGroupInvite}><div><strong>Invite a UEW member</strong><p>Enter their exact CampusConnect username.</p></div><div className="group-invite-fields"><input value={inviteUsername} onChange={(e) => setInviteUsername(e.target.value)} placeholder="e.g. ama_owusu" aria-label="Member username" required/><button className="primary-button compact" disabled={groupBusy || !inviteUsername.trim()}>{groupBusy ? "Sending…" : "Send invite"} <span>→</span></button></div></form>}
+                  {(activeGroup.owner_id === user.id || groupMemberships[activeGroup.id] === "admin") && <section className="group-members-card card"><div className="groups-section-heading"><h2>Members & moderators</h2><span>{groupMembers.length} members</span></div><div className="group-member-list">{groupMembers.map((member) => { const person = profiles[member.user_id]; return <div className="group-member-row" key={member.user_id}><div><strong>{person?.display_name || "UEW member"}</strong><span>@{person?.username || "campusmember"} · {member.role}</span></div>{activeGroup.owner_id === user.id && member.user_id !== user.id && <select aria-label={"Role for " + (person?.username || "member")} value={member.role === "moderator" ? "moderator" : "member"} disabled={groupBusy} onChange={(e) => void updateGroupMemberRole(member, e.target.value as "member" | "moderator")}><option value="member">Member</option><option value="moderator">Moderator</option></select>}</div>; })}</div></section>}
                   <form className="group-composer card" onSubmit={publishGroupPost}>
                     <textarea value={groupPostDraft} onChange={(e) => setGroupPostDraft(e.target.value)} maxLength={10000} placeholder={"Share something with " + activeGroup.name + "…"} aria-label="Write a group post"/>
                     <div className="group-composer-bottom"><span>Posts are visible to group members only.</span><button className="primary-button compact" disabled={groupBusy || !groupPostDraft.trim()}>{groupBusy ? "Please wait…" : "Share post"} <span>→</span></button></div>
@@ -583,12 +699,13 @@ export default function Home() {
                   <div className="group-posts">
                     {groupPosts.length === 0 ? <div className="empty card"><div className="empty-icon">◎</div><h3>Start the conversation</h3><p>Share the first update with members of this community.</p></div> : groupPosts.map((post) => {
                       const author = profiles[post.author_id];
-                      return <article className="post card" key={post.id}><div className="post-head">{avatarUrls[post.author_id] ? <img className="avatar avatar-image" src={avatarUrls[post.author_id]} alt=""/> : <div className="avatar">{initials(author?.display_name || "UEW")}</div>}<div className="post-author"><strong>{author?.display_name || "UEW member"}</strong><span>@{author?.username || "campusmember"} · {new Date(post.created_at).toLocaleString()}</span></div></div><p className="post-body">{post.body}</p>{(post.author_id === user.id || activeGroup.owner_id === user.id) && <div className="group-post-actions"><button disabled={groupBusy} onClick={() => deleteGroupPost(post)}>Delete post</button></div>}</article>;
+                      return <article className="post card" key={post.id}><div className="post-head">{avatarUrls[post.author_id] ? <img className="avatar avatar-image" src={avatarUrls[post.author_id]} alt=""/> : <div className="avatar">{initials(author?.display_name || "UEW")}</div>}<div className="post-author"><strong>{author?.display_name || "UEW member"}</strong><span>@{author?.username || "campusmember"} · {new Date(post.created_at).toLocaleString()}</span></div></div><p className="post-body">{post.body}</p>{(post.author_id === user.id || activeGroup.owner_id === user.id || groupMemberships[activeGroup.id] === "moderator" || groupMemberships[activeGroup.id] === "admin") && <div className="group-post-actions"><button disabled={groupBusy} onClick={() => deleteGroupPost(post)}>Delete post</button></div>}</article>;
                     })}
                   </div>
                 </div>
               ) : (
                 <div className="groups-view">
+                  {myGroupInvites.length > 0 && <section className="group-inbox card"><div className="groups-section-heading"><h2>Community invitations</h2><span>{myGroupInvites.length} pending</span></div>{myGroupInvites.map((invite) => <div className="group-invite-row" key={invite.id}><div><strong>{invite.group_name}</strong><span>Invited to join a private UEW community</span></div><div><button className="primary-button compact" disabled={groupBusy} onClick={() => void respondToGroupInvite(invite, "accepted")}>Accept</button><button className="profile-edit-button" disabled={groupBusy} onClick={() => void respondToGroupInvite(invite, "declined")}>Decline</button></div></div>)}</section>}
                   <div className="feed-heading"><div><div className="eyebrow">FIND YOUR PEOPLE</div><h1>Campus communities</h1><p className="muted">Join conversations and learn with people who share your interests.</p></div><div className="campus-pill"><span/> UEW GROUPS</div></div>
                   <form className="group-create-card card" onSubmit={createGroup}>
                     <div className="group-create-heading"><div><strong>Create a community</strong><p>Bring classmates and campus friends together around an interest.</p></div><span>✳</span></div>
