@@ -78,6 +78,9 @@ export default function MessagingWorkspace({ supabase, user }: MessagingWorkspac
   const [manageMemberSearch, setManageMemberSearch] = useState("");
   const [manageMemberResult, setManageMemberResult] = useState<Profile | null>(null);
   const [manageBusy, setManageBusy] = useState(false);
+  const [groupRenameOpen, setGroupRenameOpen] = useState(false);
+  const [groupRenameDraft, setGroupRenameDraft] = useState("");
+  const [groupSettingsBusy, setGroupSettingsBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [listBusy, setListBusy] = useState(false);
   const imageInput = useRef<HTMLInputElement>(null);
@@ -392,6 +395,22 @@ export default function MessagingWorkspace({ supabase, user }: MessagingWorkspac
     }
   }
 
+  async function renameGroupConversation(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!activeConversationId) return;
+    const title = groupRenameDraft.trim();
+    if (title.length < 3 || title.length > 60) { setNotice("Group names must contain 3 to 60 characters."); return; }
+    setGroupSettingsBusy(true); setNotice("");
+    try {
+      const { error } = await supabase.rpc("rename_group_conversation", { target_conversation_id: activeConversationId, new_title: title });
+      if (error) throw error;
+      setGroupRenameOpen(false); setGroupRenameDraft("");
+      await loadConversations();
+      setNotice("Group name updated.");
+    } catch (error) { setNotice(error instanceof Error ? error.message : "Could not rename this group."); }
+    finally { setGroupSettingsBusy(false); }
+  }
+
   async function manageGroupMember(targetUserId: string, action: "add" | "remove" | "leave") {
     if (!activeConversationId) return;
     setManageBusy(true);
@@ -608,6 +627,14 @@ export default function MessagingWorkspace({ supabase, user }: MessagingWorkspac
                 <div><strong>Group members</strong><span>{activeConversation.members.length} of 20 members</span></div>
                 <span className="group-manager-role">{currentGroupRole === "owner" ? "Owner" : currentGroupRole === "admin" ? "Administrator" : "Member"}</span>
               </div>
+              {canManageGroupMembers && <div className="group-settings-panel">
+                <div><strong>Group settings</strong><span>Manage the group name and membership</span></div>
+                {!groupRenameOpen ? <button type="button" className="message-manage-toggle" onClick={() => { setGroupRenameDraft(activeConversation?.title ?? ""); setGroupRenameOpen(true); }}>Rename group</button> : <form className="group-rename-form" onSubmit={(event) => void renameGroupConversation(event)}>
+                  <input value={groupRenameDraft} onChange={(event) => setGroupRenameDraft(event.target.value)} minLength={3} maxLength={60} aria-label="New group name" placeholder="Enter a group name" required />
+                  <button type="submit" className="primary-button compact" disabled={groupSettingsBusy || groupRenameDraft.trim().length < 3}>{groupSettingsBusy ? "Saving…" : "Save name"}</button>
+                  <button type="button" className="message-inline-action" disabled={groupSettingsBusy} onClick={() => { setGroupRenameOpen(false); setGroupRenameDraft(""); }}>Cancel</button>
+                </form>}
+              </div>}
               {canManageGroupMembers && <form className="group-member-add" onSubmit={(event) => { event.preventDefault(); void searchMember(manageMemberSearch, setManageMemberResult, setSearchBusy); }}>
                 <input value={manageMemberSearch} onChange={(event) => setManageMemberSearch(event.target.value)} placeholder="Find a verified UEW member by username" aria-label="Search member to add" />
                 <button type="submit" className="primary-button compact" disabled={searchBusy || !manageMemberSearch.trim()}>Find</button>
