@@ -324,7 +324,6 @@ export default function Home() {
     }
     if (item.entity_type === "message") {
       setActiveView("messages");
-      await loadConversations();
     } else if (item.entity_type === "group") {
       setActiveView("groups");
       setActiveGroupId(null);
@@ -864,7 +863,7 @@ export default function Home() {
             <div className="side-label">YOUR CAMPUS</div>
             <button className={activeView === "feed" ? "side-link selected" : "side-link"} onClick={() => { setActiveView("feed"); setActiveGroupId(null); }}><span>⌂</span> Home feed</button>
             <button className={activeView === "groups" ? "side-link selected" : "side-link"} onClick={() => { setActiveView("groups"); setActiveGroupId(null); void loadGroups(); }}><span>◎</span> Communities</button>
-            <button className={activeView === "messages" ? "side-link selected" : "side-link"} onClick={() => { setActiveView("messages"); setActiveGroupId(null); void loadConversations(); }}><span>✉</span> Messages</button>
+            <button className={activeView === "messages" ? "side-link selected" : "side-link"} onClick={() => { setActiveView("messages"); setActiveGroupId(null);  }}><span>✉</span> Messages</button>
             <button className={activeView === "events" ? "side-link selected" : "side-link"} onClick={() => { setActiveView("events"); setActiveGroupId(null); void loadCampusBoard(); }}><span>▦</span> Events & notices</button>
             <div className="sidebar-note"><strong>UEW · Winneba</strong><p>A community built around your campus experience.</p></div>
           </aside>
