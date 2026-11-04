@@ -145,3 +145,11 @@
 
 /* Message editing and soft deletion */
 .message-meta-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:5px}.message-meta-row time{margin-top:0}.message-own-actions{display:flex;gap:8px}.message-own-actions button,.message-inline-action{border:0;background:transparent;color:#52745a;font-size:8px;font-weight:800;padding:3px;cursor:pointer}.message-own-actions button:last-child{color:#a34c45}.message-own-actions button:disabled,.message-inline-action:disabled{opacity:.45;cursor:wait}.message-edit-form{display:grid;gap:7px}.message-edit-form textarea{width:100%;min-height:70px;resize:vertical;border:1px solid #cbdccc;border-radius:8px;padding:8px;font:inherit;font-size:11px;line-height:1.5;color:var(--ink);background:#fff}.message-edit-form>div{display:flex;align-items:center;gap:9px}
+
+/* Group conversation settings */
+.group-settings-panel{display:grid;gap:9px;padding:12px;margin:12px 0;border:1px solid #e0e9e1;border-radius:12px;background:#f8fbf8}
+.group-settings-panel>div:first-child{display:grid;gap:3px}
+.group-settings-panel>div:first-child strong{font-size:11px;color:var(--ink)}
+.group-settings-panel>div:first-child span{font-size:9px;color:var(--muted)}
+.group-rename-form{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.group-rename-form input{flex:1;min-width:160px;border:1px solid #cbdccc;border-radius:8px;padding:9px;font:inherit;font-size:10px;background:#fff;color:var(--ink)}
