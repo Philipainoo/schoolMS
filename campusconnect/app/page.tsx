@@ -269,16 +269,21 @@ export default function Home() {
     if (!supabase || !user) return;
     setGroupBusy(true); setNotice("");
     try {
-      const { data, error } = await supabase.rpc("create_campus_group", {
-        p_name: groupName.trim(),
-        p_description: groupDescription.trim() || null,
-        p_category: groupCategory,
-        p_visibility: "public",
-      });
+      const { data: account, error: accountError } = await supabase.from("users")
+        .select("institution_id").eq("id", user.id).single();
+      if (accountError || !account) throw new Error("Your verified UEW account could not be loaded.");
+      const { data, error } = await supabase.from("groups").insert({
+        institution_id: account.institution_id,
+        owner_id: user.id,
+        name: groupName.trim(),
+        description: groupDescription.trim() || null,
+        category: groupCategory,
+        visibility: "public",
+      }).select("id").single();
       if (error) throw error;
       setGroupName(""); setGroupDescription("");
       await loadGroups();
-      const groupId = data as string;
+      const groupId = data.id as string;
       setActiveGroupId(groupId);
       setActiveView("groups");
       await loadGroupPosts(groupId);
