@@ -31,7 +31,7 @@ In Supabase Authentication settings:
 - Add your local and production app URLs to the allowed redirect URLs.
 - Configure a production SMTP provider before inviting the whole campus.
 
-The UEW tenant record is already seeded. The official UEW student/faculty email domains have **not** been confirmed or configured, so this first pass does not pretend to validate current enrolment. Email confirmation proves control of an email inbox, not current student status. Do not enforce a guessed email suffix.
+The UEW tenant record is already seeded. New accounts start with `verification_status = pending`; the app deliberately blocks community access until an authorised campus administrator verifies the account. Email confirmation proves control of an email inbox, not current student status. The official UEW student/faculty email domains have **not** been confirmed or configured, so do not enforce a guessed email suffix. After the university eligibility process is confirmed, provide administrators with a secure verification workflow before inviting the campus.
 
 ## Existing database
 
