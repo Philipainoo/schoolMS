@@ -80,10 +80,10 @@ begin
     raise exception 'Group name must be between 2 and 80 characters.';
   end if;
 
-  select coalesce(array_agg(distinct member_id), '{}'::uuid[])
+  select coalesce(array_agg(distinct selected.member_id), '{}'::uuid[])
     into selected_user_ids
-  from unnest(coalesce(target_user_ids, '{}'::uuid[])) as member_id
-  where member_id is not null and member_id <> requester_id;
+  from unnest(coalesce(target_user_ids, '{}'::uuid[])) as selected(member_id)
+  where selected.member_id is not null and selected.member_id <> requester_id;
 
   if cardinality(selected_user_ids) < 1 or cardinality(selected_user_ids) > 19 then
     raise exception 'Choose between 1 and 19 other verified campus members.';
@@ -116,8 +116,8 @@ begin
   values (tenant_id, thread_id, requester_id);
 
   insert into public.conversation_members(institution_id, conversation_id, user_id)
-  select tenant_id, thread_id, member_id
-  from unnest(selected_user_ids) as member_id;
+  select tenant_id, thread_id, selected.member_id
+  from unnest(selected_user_ids) as selected(member_id);
 
   return thread_id;
 end;
@@ -201,8 +201,8 @@ with check (
   and coalesce(array_length(attachment_paths, 1), 0) <= 4
   and not exists (
     select 1
-    from unnest(attachment_paths) as attachment_path
-    where attachment_path !~ (
+    from unnest(attachment_paths) as attachments(path)
+    where attachments.path !~ (
       '^' || conversation_id::text || '/' || (select auth.uid())::text || '/[^/]+$'
     )
   )
