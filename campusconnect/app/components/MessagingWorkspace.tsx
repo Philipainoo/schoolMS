@@ -37,7 +37,9 @@ type ChatMessage = {
   created_at: string;
   edited_at: string | null;
   deleted_at: string | null;
+  parent_message_id?: string | null;
   attachmentUrls?: string[];
+  reactions?: Array<{ emoji: string; count: number; reacted: boolean }>;
 };
 
 type MessagingWorkspaceProps = {
@@ -70,6 +72,7 @@ export default function MessagingWorkspace({ supabase, user }: MessagingWorkspac
   const [messageBusy, setMessageBusy] = useState(false);
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
+  const [replyToMessage, setReplyToMessage] = useState<ChatMessage | null>(null);
   const [messageActionBusy, setMessageActionBusy] = useState(false);
   const [groupFormOpen, setGroupFormOpen] = useState(false);
   const [groupTitle, setGroupTitle] = useState("");
@@ -185,7 +188,7 @@ export default function MessagingWorkspace({ supabase, user }: MessagingWorkspac
   const loadThread = useCallback(async (conversationId: string) => {
     const { data, error } = await supabase
       .from("messages")
-      .select("id,conversation_id,sender_id,body,attachment_paths,created_at,edited_at,deleted_at")
+      .select("id,conversation_id,sender_id,body,attachment_paths,created_at,edited_at,deleted_at,parent_message_id")
       .eq("conversation_id", conversationId)
       .order("created_at", { ascending: true })
       .limit(200);
@@ -203,7 +206,20 @@ export default function MessagingWorkspace({ supabase, user }: MessagingWorkspac
       }));
       return { ...message, attachmentUrls: urls.filter((url): url is string => Boolean(url)) };
     }));
-    setThreadMessages(hydrated);
+    const messageIds = hydrated.map((message) => message.id);
+    const { data: reactionRows, error: reactionError } = messageIds.length
+      ? await supabase.from("message_reactions").select("message_id,user_id,emoji").in("message_id", messageIds)
+      : { data: [], error: null };
+    if (reactionError) setNotice(reactionError.message);
+    const reactionMap = new Map<string, Array<{ emoji: string; count: number; reacted: boolean }>>();
+    (reactionRows ?? []).forEach((reaction) => {
+      const current = reactionMap.get(reaction.message_id) ?? [];
+      const existing = current.find((item) => item.emoji === reaction.emoji);
+      if (existing) { existing.count += 1; existing.reacted ||= reaction.user_id === user.id; }
+      else current.push({ emoji: reaction.emoji, count: 1, reacted: reaction.user_id === user.id });
+      reactionMap.set(reaction.message_id, current);
+    });
+    setThreadMessages(hydrated.map((message) => ({ ...message, reactions: reactionMap.get(message.id) ?? [] })));
     const readAt = new Date().toISOString();
     const { error: markError } = await supabase.from("conversation_members")
       .update({ last_read_at: readAt })
@@ -236,6 +252,9 @@ export default function MessagingWorkspace({ supabase, user }: MessagingWorkspac
         const message = payload.new as ChatMessage;
         if (message.conversation_id === activeConversationId) void loadThread(message.conversation_id);
         void loadConversations();
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "message_reactions" }, () => {
+        if (activeConversationId) void loadThread(activeConversationId);
       })
       .subscribe();
     return () => { void supabase.removeChannel(channel); };
@@ -554,6 +573,59 @@ export default function MessagingWorkspace({ supabase, user }: MessagingWorkspac
     } catch (error) { setNotice(error instanceof Error ? error.message : "The message could not be deleted."); }
     finally { setMessageActionBusy(false); }
   }
+  async function toggleMessageReaction(messageId: string, emoji: string) {
+    const message = threadMessages.find((item) => item.id === messageId);
+    if (!message || message.deleted_at) return;
+    const existing = (message.reactions ?? []).some((reaction) => reaction.emoji === emoji && reaction.reacted);
+    setThreadMessages((current) => current.map((item) => {
+      if (item.id !== messageId) return item;
+      const reactions = [...(item.reactions ?? [])];
+      const index = reactions.findIndex((reaction) => reaction.emoji === emoji);
+      if (existing) {
+        if (index >= 0) {
+          reactions[index] = { ...reactions[index], count: reactions[index].count - 1, reacted: false };
+          if (reactions[index].count <= 0) reactions.splice(index, 1);
+        }
+      } else if (index >= 0) {
+        reactions[index] = { ...reactions[index], count: reactions[index].count + 1, reacted: true };
+      } else reactions.push({ emoji, count: 1, reacted: true });
+      return { ...item, reactions };
+    }));
+    const result = existing
+      ? await supabase.from("message_reactions").delete().eq("message_id", messageId).eq("user_id", user.id).eq("emoji", emoji)
+      : await supabase.from("message_reactions").insert({ message_id: messageId, user_id: user.id, emoji });
+    if (result.error) {
+      setNotice(result.error.message);
+      if (activeConversationId) void loadThread(activeConversationId);
+    }
+  }
+
+  function renderMessage(message: ChatMessage, depth = 0): React.ReactNode {
+    const replies = depth === 0 ? threadMessages.filter((item) => item.parent_message_id === message.id) : [];
+    return <div key={message.id} className={"message-thread-item" + (depth > 0 ? " message-thread-reply" : "")}>
+      <div className={message.sender_id === user.id ? "message-bubble mine" : "message-bubble"}>
+        {depth > 0 && <span className="message-reply-context">↳ Reply</span>}
+        {editingMessageId === message.id ? <form className="message-edit-form" onSubmit={(event) => { event.preventDefault(); void saveMessageEdit(message.id); }}>
+          <textarea value={editDraft} onChange={(event) => setEditDraft(event.target.value)} maxLength={10000} aria-label="Edit message" autoFocus />
+          <div><button type="submit" className="primary-button compact" disabled={messageActionBusy || !editDraft.trim()}>{messageActionBusy ? "Saving…" : "Save"}</button><button type="button" className="message-inline-action" disabled={messageActionBusy} onClick={() => { setEditingMessageId(null); setEditDraft(""); }}>Cancel</button></div>
+        </form> : <p>{message.deleted_at ? "This message was deleted" : message.body}</p>}
+        {!message.deleted_at && message.attachmentUrls?.map((url) => <a className="message-image-link" href={url} target="_blank" rel="noreferrer" key={url}><img className="message-image" src={url} alt="Image shared in this conversation" /></a>)}
+        {!message.deleted_at && <div className="message-reactions">
+          {(message.reactions ?? []).map((reaction) => <button type="button" key={reaction.emoji} className={"message-reaction" + (reaction.reacted ? " selected" : "")} aria-pressed={reaction.reacted} onClick={() => void toggleMessageReaction(message.id, reaction.emoji)}>{reaction.emoji} {reaction.count}</button>)}
+          {["👍", "❤️", "😂", "🎉", "🙏", "🔥"].map((emoji) => <button type="button" key={emoji} className="message-reaction-add" aria-label={"React with " + emoji} title={"React with " + emoji} onClick={() => void toggleMessageReaction(message.id, emoji)}>{emoji}</button>)}
+        </div>}
+        <div className="message-meta-row"><time>{friendlyTime(message.created_at)}{message.edited_at && !message.deleted_at ? " · edited" : ""}</time>
+          <div className="message-own-actions">
+            {!message.deleted_at && <button type="button" onClick={() => setReplyToMessage(message)}>Reply</button>}
+            {message.sender_id === user.id && !message.deleted_at && editingMessageId !== message.id && <><button type="button" disabled={messageActionBusy} onClick={() => { setEditingMessageId(message.id); setEditDraft(message.body); }}>Edit</button><button type="button" disabled={messageActionBusy} onClick={() => void deleteMessage(message)}>Delete</button></>}
+          </div>
+        </div>
+        {message.id === lastOwnMessageId && <span className="message-read-receipt">{seenByCount > 0 ? (activeConversation?.is_group ? "Seen by " + seenByCount : "Seen") : "Sent"}</span>}
+      </div>
+      {replies.length > 0 && <div className="message-thread-children">{replies.map((reply) => renderMessage(reply, depth + 1))}</div>}
+    </div>;
+  }
+
   async function sendMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!activeConversationId || (!messageDraft.trim() && !selectedImage)) return;
@@ -580,9 +652,11 @@ export default function MessagingWorkspace({ supabase, user }: MessagingWorkspac
         sender_id: user.id,
         body: messageDraft.trim() || (attachmentPaths.length ? "Shared a photo" : ""),
         attachment_paths: attachmentPaths,
+        parent_message_id: replyToMessage ? (replyToMessage.parent_message_id ?? replyToMessage.id) : null,
       });
       if (error) throw error;
       setMessageDraft("");
+      setReplyToMessage(null);
       updateTypingPresence(false);
       setSelectedImage(null);
       if (imageInput.current) imageInput.current.value = "";
@@ -731,22 +805,13 @@ export default function MessagingWorkspace({ supabase, user }: MessagingWorkspac
               {isGroupOwner && <p className="group-owner-note">As owner, you can add or remove members, appoint administrators, and transfer ownership. Administrators can manage regular members.</p>}
             </section>}
             <div className="message-thread-body">
-              {threadMessages.length === 0 ? <div className="message-thread-empty">Say hello and start the conversation.</div> : threadMessages.map((message) => <div key={message.id} className={message.sender_id === user.id ? "message-bubble mine" : "message-bubble"}>
-                {editingMessageId === message.id ? <form className="message-edit-form" onSubmit={(event) => { event.preventDefault(); void saveMessageEdit(message.id); }}>
-                  <textarea value={editDraft} onChange={(event) => setEditDraft(event.target.value)} maxLength={10000} aria-label="Edit message" autoFocus />
-                  <div><button type="submit" className="primary-button compact" disabled={messageActionBusy || !editDraft.trim()}>{messageActionBusy ? "Saving…" : "Save"}</button><button type="button" className="message-inline-action" disabled={messageActionBusy} onClick={() => { setEditingMessageId(null); setEditDraft(""); }}>Cancel</button></div>
-                </form> : <p>{message.deleted_at ? "This message was deleted" : message.body}</p>}
-                {!message.deleted_at && message.attachmentUrls?.map((url) => <a className="message-image-link" href={url} target="_blank" rel="noreferrer" key={url}><img className="message-image" src={url} alt="Image shared in this conversation" /></a>)}
-                <div className="message-meta-row"><time>{friendlyTime(message.created_at)}{message.edited_at && !message.deleted_at ? " · edited" : ""}</time>
-                  {message.sender_id === user.id && !message.deleted_at && editingMessageId !== message.id && <div className="message-own-actions"><button type="button" disabled={messageActionBusy} onClick={() => { setEditingMessageId(message.id); setEditDraft(message.body); }}>Edit</button><button type="button" disabled={messageActionBusy} onClick={() => void deleteMessage(message)}>Delete</button></div>}
-                </div>
-                {message.id === lastOwnMessageId && <span className="message-read-receipt">{seenByCount > 0 ? (activeConversation?.is_group ? "Seen by " + seenByCount : "Seen") : "Sent"}</span>}
-              </div>)}
+              {threadMessages.filter((message) => !message.parent_message_id).length === 0 ? <div className="message-thread-empty">Say hello and start the conversation.</div> : threadMessages.filter((message) => !message.parent_message_id).map((message) => renderMessage(message))}
               <div ref={threadEnd} />
             </div>
             <div className="message-typing-indicator" aria-live="polite" aria-atomic="true">
               {typingUsers.length > 0 && <><span className="typing-dots"><i /><i /><i /></span><span>{typingUsers.length === 1 ? typingUsers[0].display_name + " is typing…" : typingUsers.length === 2 ? typingUsers[0].display_name + " and " + typingUsers[1].display_name + " are typing…" : typingUsers.length + " people are typing…"}</span></>}
             </div>
+            {replyToMessage && <div className="message-replying-to"><div><strong>Replying to {replyToMessage.sender_id === user.id ? "yourself" : activeConversation?.members.find((member) => member.user_id === replyToMessage.sender_id)?.display_name ?? "UEW member"}</strong><span>{replyToMessage.deleted_at ? "Message deleted" : replyToMessage.body}</span></div><button type="button" onClick={() => setReplyToMessage(null)} aria-label="Cancel reply">×</button></div>}
             <form className="message-compose" onSubmit={sendMessage}>
               <input value={messageDraft} onChange={(event) => { setMessageDraft(event.target.value); updateTypingPresence(Boolean(event.target.value.trim())); }} onBlur={() => updateTypingPresence(false)} maxLength={10000} placeholder="Write a message…" aria-label="Write a message" />
               <input ref={imageInput} className="message-image-input" type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setSelectedImage(event.target.files?.[0] ?? null)} aria-label="Attach an image" />
