@@ -32,6 +32,8 @@ type ChatMessage = {
   body: string;
   attachment_paths: string[];
   created_at: string;
+  edited_at: string | null;
+  deleted_at: string | null;
   attachmentUrls?: string[];
 };
 
@@ -63,6 +65,9 @@ export default function MessagingWorkspace({ supabase, user }: MessagingWorkspac
   const [messageDraft, setMessageDraft] = useState("");
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [messageBusy, setMessageBusy] = useState(false);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState("");
+  const [messageActionBusy, setMessageActionBusy] = useState(false);
   const [groupFormOpen, setGroupFormOpen] = useState(false);
   const [groupTitle, setGroupTitle] = useState("");
   const [groupSearch, setGroupSearch] = useState("");
@@ -124,7 +129,7 @@ export default function MessagingWorkspace({ supabase, user }: MessagingWorkspac
 
     const { data: messageRows, error: messagesError } = await supabase
       .from("messages")
-      .select("id,conversation_id,sender_id,body,attachment_paths,created_at")
+      .select("id,conversation_id,sender_id,body,attachment_paths,created_at,edited_at,deleted_at")
       .in("conversation_id", ids)
       .order("created_at", { ascending: false })
       .limit(500);
@@ -173,7 +178,7 @@ export default function MessagingWorkspace({ supabase, user }: MessagingWorkspac
     }
     const messages = (data ?? []) as ChatMessage[];
     const hydrated = await Promise.all(messages.map(async (message) => {
-      const paths = message.attachment_paths ?? [];
+      const paths = message.deleted_at ? [] : (message.attachment_paths ?? []);
       if (!paths.length) return { ...message, attachmentUrls: [] };
       const urls = await Promise.all(paths.map(async (path) => {
         const { data: signed } = await supabase.storage.from(ATTACHMENT_BUCKET).createSignedUrl(path, 3600);
@@ -210,7 +215,7 @@ export default function MessagingWorkspace({ supabase, user }: MessagingWorkspac
 
   useEffect(() => {
     const channel = supabase.channel("campusconnect-messages-ui-" + user.id)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, (payload) => {
+      .on("postgres_changes", { event: "*", schema: "public", table: "messages" }, (payload) => {
         const message = payload.new as ChatMessage;
         if (message.conversation_id === activeConversationId) void loadThread(message.conversation_id);
         void loadConversations();
@@ -448,6 +453,36 @@ export default function MessagingWorkspace({ supabase, user }: MessagingWorkspac
     }
   }
 
+  async function saveMessageEdit(messageId: string) {
+    const cleanBody = editDraft.trim();
+    if (!cleanBody || cleanBody.length > 10000) { setNotice("Enter a message between 1 and 10,000 characters."); return; }
+    setMessageActionBusy(true); setNotice("");
+    try {
+      const { error } = await supabase.from("messages").update({ body: cleanBody }).eq("id", messageId).eq("sender_id", user.id).is("deleted_at", null);
+      if (error) throw error;
+      setEditingMessageId(null); setEditDraft("");
+      if (activeConversationId) await Promise.all([loadThread(activeConversationId), loadConversations()]);
+      setNotice("Message updated.");
+    } catch (error) { setNotice(error instanceof Error ? error.message : "The message could not be edited."); }
+    finally { setMessageActionBusy(false); }
+  }
+
+  async function deleteMessage(message: ChatMessage) {
+    if (!window.confirm("Delete this message for everyone in the conversation?")) return;
+    setMessageActionBusy(true); setNotice("");
+    try {
+      const { error } = await supabase.from("messages").update({ deleted_at: new Date().toISOString() }).eq("id", message.id).eq("sender_id", user.id).is("deleted_at", null);
+      if (error) throw error;
+      setEditingMessageId(null); setEditDraft("");
+      if (message.attachment_paths.length) {
+        const { error: cleanupError } = await supabase.storage.from(ATTACHMENT_BUCKET).remove(message.attachment_paths);
+        if (cleanupError) setNotice("Message deleted. Its old image file could not be cleaned up automatically.");
+      }
+      if (activeConversationId) await Promise.all([loadThread(activeConversationId), loadConversations()]);
+      setNotice((current) => current || "Message deleted.");
+    } catch (error) { setNotice(error instanceof Error ? error.message : "The message could not be deleted."); }
+    finally { setMessageActionBusy(false); }
+  }
   async function sendMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!activeConversationId || (!messageDraft.trim() && !selectedImage)) return;
@@ -599,9 +634,14 @@ export default function MessagingWorkspace({ supabase, user }: MessagingWorkspac
             </section>}
             <div className="message-thread-body">
               {threadMessages.length === 0 ? <div className="message-thread-empty">Say hello and start the conversation.</div> : threadMessages.map((message) => <div key={message.id} className={message.sender_id === user.id ? "message-bubble mine" : "message-bubble"}>
-                <p>{message.body}</p>
-                {message.attachmentUrls?.map((url) => <a className="message-image-link" href={url} target="_blank" rel="noreferrer" key={url}><img className="message-image" src={url} alt="Image shared in this conversation" /></a>)}
-                <time>{friendlyTime(message.created_at)}</time>
+                {editingMessageId === message.id ? <form className="message-edit-form" onSubmit={(event) => { event.preventDefault(); void saveMessageEdit(message.id); }}>
+                  <textarea value={editDraft} onChange={(event) => setEditDraft(event.target.value)} maxLength={10000} aria-label="Edit message" autoFocus />
+                  <div><button type="submit" className="primary-button compact" disabled={messageActionBusy || !editDraft.trim()}>{messageActionBusy ? "Saving…" : "Save"}</button><button type="button" className="message-inline-action" disabled={messageActionBusy} onClick={() => { setEditingMessageId(null); setEditDraft(""); }}>Cancel</button></div>
+                </form> : <p>{message.deleted_at ? "This message was deleted" : message.body}</p>}
+                {!message.deleted_at && message.attachmentUrls?.map((url) => <a className="message-image-link" href={url} target="_blank" rel="noreferrer" key={url}><img className="message-image" src={url} alt="Image shared in this conversation" /></a>)}
+                <div className="message-meta-row"><time>{friendlyTime(message.created_at)}{message.edited_at && !message.deleted_at ? " · edited" : ""}</time>
+                  {message.sender_id === user.id && !message.deleted_at && editingMessageId !== message.id && <div className="message-own-actions"><button type="button" disabled={messageActionBusy} onClick={() => { setEditingMessageId(message.id); setEditDraft(message.body); }}>Edit</button><button type="button" disabled={messageActionBusy} onClick={() => void deleteMessage(message)}>Delete</button></div>}
+                </div>
                 {message.id === lastOwnMessageId && <span className="message-read-receipt">{seenByCount > 0 ? (activeConversation?.is_group ? "Seen by " + seenByCount : "Seen") : "Sent"}</span>}
               </div>)}
               <div ref={threadEnd} />
