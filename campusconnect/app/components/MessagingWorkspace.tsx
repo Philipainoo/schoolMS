@@ -21,6 +21,9 @@ type Conversation = {
   created_by: string;
   is_group: boolean;
   title: string | null;
+  description: string | null;
+  avatar_path: string | null;
+  avatarUrl: string | null;
   members: GroupMember[];
   lastMessage: ChatMessage | null;
 };
@@ -81,6 +84,9 @@ export default function MessagingWorkspace({ supabase, user }: MessagingWorkspac
   const [groupRenameOpen, setGroupRenameOpen] = useState(false);
   const [groupRenameDraft, setGroupRenameDraft] = useState("");
   const [groupSettingsBusy, setGroupSettingsBusy] = useState(false);
+  const [groupDescriptionDraft, setGroupDescriptionDraft] = useState("");
+  const [groupAvatarFile, setGroupAvatarFile] = useState<File | null>(null);
+  const groupAvatarInput = useRef<HTMLInputElement>(null);
   const [notice, setNotice] = useState("");
   const [listBusy, setListBusy] = useState(false);
   const imageInput = useRef<HTMLInputElement>(null);
@@ -92,7 +98,7 @@ export default function MessagingWorkspace({ supabase, user }: MessagingWorkspac
     setListBusy(true);
     const { data: rows, error } = await supabase
       .from("conversations")
-      .select("id,created_at,created_by,is_group,title")
+      .select("id,created_at,created_by,is_group,title,description,avatar_path")
       .order("created_at", { ascending: false })
       .limit(60);
     if (error) {
@@ -160,11 +166,19 @@ export default function MessagingWorkspace({ supabase, user }: MessagingWorkspac
       created_by: row.created_by as string,
       is_group: Boolean(row.is_group),
       title: (row.title as string | null) ?? null,
+      description: (row.description as string | null) ?? null,
+      avatar_path: (row.avatar_path as string | null) ?? null,
+      avatarUrl: null,
       members: memberMap.get(row.id as string) ?? [],
       lastMessage: latest.get(row.id as string) ?? null,
     })).sort((a, b) => new Date(b.lastMessage?.created_at ?? b.created_at).getTime() - new Date(a.lastMessage?.created_at ?? a.created_at).getTime());
 
-    setConversations(result);
+    const hydratedResult = await Promise.all(result.map(async (conversation) => {
+      if (!conversation.is_group || !conversation.avatar_path) return conversation;
+      const { data: signed } = await supabase.storage.from("campus-group-avatars").createSignedUrl(conversation.avatar_path, 3600);
+      return { ...conversation, avatarUrl: signed?.signedUrl ?? null };
+    }));
+    setConversations(hydratedResult);
     setListBusy(false);
   }, [supabase]);
 
@@ -411,6 +425,44 @@ export default function MessagingWorkspace({ supabase, user }: MessagingWorkspac
     finally { setGroupSettingsBusy(false); }
   }
 
+  async function saveGroupProfile(event: FormEvent<HTMLFormElement>, removeAvatar = false) {
+    event.preventDefault();
+    if (!activeConversationId || !activeConversation?.is_group) return;
+    const description = groupDescriptionDraft.trim();
+    if (description.length > 500) { setNotice("Group descriptions can be up to 500 characters."); return; }
+    if (groupAvatarFile && (groupAvatarFile.size > 2 * 1024 * 1024 || !["image/jpeg", "image/png", "image/webp"].includes(groupAvatarFile.type))) {
+      setNotice("Choose a JPG, PNG or WebP image up to 2 MB."); return;
+    }
+    setGroupSettingsBusy(true); setNotice("");
+    let uploadedPath: string | null = null;
+    try {
+      if (groupAvatarFile) {
+        const extension = groupAvatarFile.type === "image/png" ? "png" : groupAvatarFile.type === "image/webp" ? "webp" : "jpg";
+        uploadedPath = "groups/" + activeConversationId + "/" + crypto.randomUUID() + "." + extension;
+        const { error: uploadError } = await supabase.storage.from("campus-group-avatars").upload(uploadedPath, groupAvatarFile, {
+          contentType: groupAvatarFile.type, cacheControl: "3600", upsert: false,
+        });
+        if (uploadError) throw uploadError;
+      }
+      const update: { description: string | null; avatar_path?: string | null } = { description };
+      if (uploadedPath) update.avatar_path = uploadedPath;
+      if (removeAvatar) update.avatar_path = null;
+      const { error } = await supabase.from("conversations").update(update).eq("id", activeConversationId).eq("is_group", true);
+      if (error) throw error;
+      const oldPath = activeConversation.avatar_path;
+      if (oldPath && (uploadedPath || removeAvatar)) {
+        await supabase.storage.from("campus-group-avatars").remove([oldPath]);
+      }
+      setGroupAvatarFile(null);
+      if (groupAvatarInput.current) groupAvatarInput.current.value = "";
+      await loadConversations();
+      setNotice("Group profile updated.");
+    } catch (error) {
+      if (uploadedPath) await supabase.storage.from("campus-group-avatars").remove([uploadedPath]);
+      setNotice(error instanceof Error ? error.message : "Could not update the group profile.");
+    } finally { setGroupSettingsBusy(false); }
+  }
+
   async function manageGroupMember(targetUserId: string, action: "add" | "remove" | "leave") {
     if (!activeConversationId) return;
     setManageBusy(true);
@@ -603,7 +655,7 @@ export default function MessagingWorkspace({ supabase, user }: MessagingWorkspac
               ? (conversation.lastMessage.sender_id === user.id ? "You: " : "") + (conversation.lastMessage.attachment_paths?.length ? "📷 " : "") + conversation.lastMessage.body
               : conversation.is_group ? "Group conversation created" : "Start the conversation";
             return <button type="button" className={activeConversationId === conversation.id ? "conversation-item active" : "conversation-item"} key={conversation.id} onClick={() => setActiveConversationId(conversation.id)}>
-              <span className="conversation-avatar">{conversation.is_group ? "GC" : initials(title)}</span>
+              <span className="conversation-avatar">{conversation.is_group && conversation.avatarUrl ? <img src={conversation.avatarUrl} alt="" /> : conversation.is_group ? "GC" : initials(title)}</span>
               <span className="conversation-item-copy">
                 <strong>{title}</strong>
                 <small>{conversation.is_group ? conversation.members.length + " members" : "@" + (peer?.username || "campusmember")}</small>
@@ -620,7 +672,7 @@ export default function MessagingWorkspace({ supabase, user }: MessagingWorkspac
                 <strong>{activeTitle}</strong>
                 <span>{activeConversation?.is_group ? "Group conversation · " + activeConversation.members.length + " members" : "Private one-to-one conversation"}</span>
               </div>
-              {activeConversation?.is_group && <button type="button" className="message-manage-toggle" onClick={() => setManageMembersOpen((open) => !open)}>{manageMembersOpen ? "Close members" : "Manage members"}</button>}
+              {activeConversation?.is_group && <button type="button" className="message-manage-toggle" onClick={() => { setGroupDescriptionDraft(activeConversation?.description ?? ""); setGroupAvatarFile(null); setManageMembersOpen((open) => !open); }}>{manageMembersOpen ? "Close members" : "Manage members"}</button>}
             </div>
             {activeConversation?.is_group && manageMembersOpen && <section className="group-member-manager">
               <div className="group-member-manager-heading">
@@ -628,12 +680,27 @@ export default function MessagingWorkspace({ supabase, user }: MessagingWorkspac
                 <span className="group-manager-role">{currentGroupRole === "owner" ? "Owner" : currentGroupRole === "admin" ? "Administrator" : "Member"}</span>
               </div>
               {canManageGroupMembers && <div className="group-settings-panel">
-                <div><strong>Group settings</strong><span>Manage the group name and membership</span></div>
+                <div><strong>Group settings</strong><span>Manage the group profile and membership</span></div>
                 {!groupRenameOpen ? <button type="button" className="message-manage-toggle" onClick={() => { setGroupRenameDraft(activeConversation?.title ?? ""); setGroupRenameOpen(true); }}>Rename group</button> : <form className="group-rename-form" onSubmit={(event) => void renameGroupConversation(event)}>
                   <input value={groupRenameDraft} onChange={(event) => setGroupRenameDraft(event.target.value)} minLength={3} maxLength={60} aria-label="New group name" placeholder="Enter a group name" required />
                   <button type="submit" className="primary-button compact" disabled={groupSettingsBusy || groupRenameDraft.trim().length < 3}>{groupSettingsBusy ? "Saving…" : "Save name"}</button>
                   <button type="button" className="message-inline-action" disabled={groupSettingsBusy} onClick={() => { setGroupRenameOpen(false); setGroupRenameDraft(""); }}>Cancel</button>
                 </form>}
+                <form className="group-profile-form" onSubmit={(event) => void saveGroupProfile(event)}>
+                  <label>Group description
+                    <textarea value={groupDescriptionDraft} onChange={(event) => setGroupDescriptionDraft(event.target.value)} maxLength={500} rows={3} placeholder="What is this group about?" />
+                    <small>{groupDescriptionDraft.length}/500 characters</small>
+                  </label>
+                  <label>Group profile photo
+                    <input ref={groupAvatarInput} type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setGroupAvatarFile(event.target.files?.[0] ?? null)} />
+                    <small>JPG, PNG or WebP · maximum 2 MB</small>
+                  </label>
+                  {groupAvatarFile && <span className="group-avatar-selected">Selected: {groupAvatarFile.name}</span>}
+                  <div className="group-profile-actions">
+                    <button type="submit" className="primary-button compact" disabled={groupSettingsBusy || groupDescriptionDraft.trim().length > 500}>{groupSettingsBusy ? "Saving…" : "Save profile"}</button>
+                    {activeConversation?.avatar_path && <button type="button" className="message-inline-action" disabled={groupSettingsBusy} onClick={(event) => { const form = event.currentTarget.closest("form"); if (form) void saveGroupProfile({ preventDefault: () => undefined } as FormEvent<HTMLFormElement>, true); }}>Remove photo</button>}
+                  </div>
+                </form>
               </div>}
               {canManageGroupMembers && <form className="group-member-add" onSubmit={(event) => { event.preventDefault(); void searchMember(manageMemberSearch, setManageMemberResult, setSearchBusy); }}>
                 <input value={manageMemberSearch} onChange={(event) => setManageMemberSearch(event.target.value)} placeholder="Find a verified UEW member by username" aria-label="Search member to add" />
