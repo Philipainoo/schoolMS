@@ -13,6 +13,8 @@ CampusConnect is a university community app for the University of Education, Win
 - Email confirmation messaging
 - Editable student profiles with bio, programme/major, department and graduation year
 - Private profile-photo uploads (JPG, PNG and WebP, 2 MB maximum) with signed image URLs
+- UEW communities: create public groups, browse, join and leave communities
+- Member-only group discussions with owner moderation of group posts
 
 ## Local setup
 
@@ -41,14 +43,17 @@ The app uses existing tables:
 - `profiles`
 - `posts`
 - `comments`
+- `groups`
+- `group_members`
+- `group_posts`
 
-The database already has row-level security enabled. The app uses only the public Supabase client and relies on those database policies; no service-role key is included. The `campus-avatars` private Storage bucket is provisioned by the `campusconnect_profile_avatars` migration. Storage policies restrict uploads, replacement and deletion to each member's own user-ID folder, and allow reads only for verified campus members. Signed URLs are short-lived.
+The database already has row-level security enabled. The app uses only the public Supabase client and relies on those database policies; no service-role key is included. The `campus-avatars` private Storage bucket is provisioned by the `campusconnect_profile_avatars` migration. Group discussion tables and tenant-safe membership policies are provisioned by `campusconnect_groups_and_discussions`; group creation is handled by the authenticated-only `create_campus_group` RPC. Storage policies restrict uploads, replacement and deletion to each member's own user-ID folder, and allow reads only for verified campus members. Signed URLs are short-lived.
 
 ## Current scope / next build steps
 
 This is a first working web foundation, not a finished production social network. The next increments should add:
 1. Notifications and realtime feed updates.
-2. Groups and membership workflows.
+2. Private-group invitations and group moderator management.
 3. Direct messages and realtime updates.
 4. Campus events and announcements.
 5. Reporting, blocking and moderator tools.
