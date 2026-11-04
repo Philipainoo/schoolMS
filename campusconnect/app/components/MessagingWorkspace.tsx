@@ -425,8 +425,8 @@ export default function MessagingWorkspace({ supabase, user }: MessagingWorkspac
     finally { setGroupSettingsBusy(false); }
   }
 
-  async function saveGroupProfile(event: FormEvent<HTMLFormElement>, removeAvatar = false) {
-    event.preventDefault();
+  async function saveGroupProfile(event?: FormEvent<HTMLFormElement>, removeAvatar = false) {
+    event?.preventDefault();
     if (!activeConversationId || !activeConversation?.is_group) return;
     const description = groupDescriptionDraft.trim();
     if (description.length > 500) { setNotice("Group descriptions can be up to 500 characters."); return; }
@@ -436,7 +436,7 @@ export default function MessagingWorkspace({ supabase, user }: MessagingWorkspac
     setGroupSettingsBusy(true); setNotice("");
     let uploadedPath: string | null = null;
     try {
-      if (groupAvatarFile) {
+      if (groupAvatarFile && !removeAvatar) {
         const extension = groupAvatarFile.type === "image/png" ? "png" : groupAvatarFile.type === "image/webp" ? "webp" : "jpg";
         uploadedPath = "groups/" + activeConversationId + "/" + crypto.randomUUID() + "." + extension;
         const { error: uploadError } = await supabase.storage.from("campus-group-avatars").upload(uploadedPath, groupAvatarFile, {
@@ -674,6 +674,10 @@ export default function MessagingWorkspace({ supabase, user }: MessagingWorkspac
               </div>
               {activeConversation?.is_group && <button type="button" className="message-manage-toggle" onClick={() => { setGroupDescriptionDraft(activeConversation?.description ?? ""); setGroupAvatarFile(null); setManageMembersOpen((open) => !open); }}>{manageMembersOpen ? "Close members" : "Manage members"}</button>}
             </div>
+            {activeConversation?.is_group && <div className="group-profile-summary">
+              <span className="group-profile-summary-avatar">{activeConversation.avatarUrl ? <img src={activeConversation.avatarUrl} alt={activeTitle + " group photo"} /> : initials(activeTitle)}</span>
+              <div><strong>{activeTitle}</strong><p>{activeConversation.description || "No group description has been added yet."}</p></div>
+            </div>}
             {activeConversation?.is_group && manageMembersOpen && <section className="group-member-manager">
               <div className="group-member-manager-heading">
                 <div><strong>Group members</strong><span>{activeConversation.members.length} of 20 members</span></div>
@@ -698,7 +702,7 @@ export default function MessagingWorkspace({ supabase, user }: MessagingWorkspac
                   {groupAvatarFile && <span className="group-avatar-selected">Selected: {groupAvatarFile.name}</span>}
                   <div className="group-profile-actions">
                     <button type="submit" className="primary-button compact" disabled={groupSettingsBusy || groupDescriptionDraft.trim().length > 500}>{groupSettingsBusy ? "Saving…" : "Save profile"}</button>
-                    {activeConversation?.avatar_path && <button type="button" className="message-inline-action" disabled={groupSettingsBusy} onClick={(event) => { const form = event.currentTarget.closest("form"); if (form) void saveGroupProfile({ preventDefault: () => undefined } as FormEvent<HTMLFormElement>, true); }}>Remove photo</button>}
+                    {activeConversation?.avatar_path && <button type="button" className="message-inline-action" disabled={groupSettingsBusy} onClick={() => void saveGroupProfile(undefined, true)}>Remove photo</button>}
                   </div>
                 </form>
               </div>}
