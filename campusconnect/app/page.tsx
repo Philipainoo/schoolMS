@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import type { ChangeEvent } from "react";
 import { getSupabase } from "@/lib/supabase";
 import type { User } from "@supabase/supabase-js";
 
@@ -209,7 +210,7 @@ export default function Home() {
     } finally { setProfileSaving(false); }
   }
 
-  async function uploadAvatar(event: React.ChangeEvent<HTMLInputElement>) {
+  async function uploadAvatar(event: ChangeEvent<HTMLInputElement>) {
     if (!supabase || !user) return;
     const file = event.target.files?.[0];
     event.target.value = "";
