@@ -324,6 +324,21 @@ export default function Home() {
     } finally { setGroupBusy(false); }
   }
 
+  async function deleteGroupPost(post: GroupPost) {
+    if (!supabase || !user || !activeGroup) return;
+    if (post.author_id !== user.id && activeGroup.owner_id !== user.id) return;
+    if (!window.confirm("Delete this group post? This cannot be undone.")) return;
+    setGroupBusy(true); setNotice("");
+    try {
+      const { error } = await supabase.from("group_posts").delete().eq("id", post.id);
+      if (error) throw error;
+      await loadGroupPosts(activeGroup.id);
+      setNotice("Group post deleted.");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Could not delete this group post.");
+    } finally { setGroupBusy(false); }
+  }
+
   async function publishGroupPost(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!supabase || !user || !activeGroup) return;
@@ -562,7 +577,7 @@ export default function Home() {
                   <div className="group-posts">
                     {groupPosts.length === 0 ? <div className="empty card"><div className="empty-icon">◎</div><h3>Start the conversation</h3><p>Share the first update with members of this community.</p></div> : groupPosts.map((post) => {
                       const author = profiles[post.author_id];
-                      return <article className="post card" key={post.id}><div className="post-head">{avatarUrls[post.author_id] ? <img className="avatar avatar-image" src={avatarUrls[post.author_id]} alt=""/> : <div className="avatar">{initials(author?.display_name || "UEW")}</div>}<div className="post-author"><strong>{author?.display_name || "UEW member"}</strong><span>@{author?.username || "campusmember"} · {new Date(post.created_at).toLocaleString()}</span></div></div><p className="post-body">{post.body}</p></article>;
+                      return <article className="post card" key={post.id}><div className="post-head">{avatarUrls[post.author_id] ? <img className="avatar avatar-image" src={avatarUrls[post.author_id]} alt=""/> : <div className="avatar">{initials(author?.display_name || "UEW")}</div>}<div className="post-author"><strong>{author?.display_name || "UEW member"}</strong><span>@{author?.username || "campusmember"} · {new Date(post.created_at).toLocaleString()}</span></div></div><p className="post-body">{post.body}</p>{(post.author_id === user.id || activeGroup.owner_id === user.id) && <div className="group-post-actions"><button disabled={groupBusy} onClick={() => deleteGroupPost(post)}>Delete post</button></div>}</article>;
                     })}
                   </div>
                 </div>
@@ -587,7 +602,7 @@ export default function Home() {
               )}
             </div>
           </section>
-          <aside className="rightbar"><div className="right-card"><div className="eyebrow">CAMPUS SPOTLIGHT</div><h3>Good things happen when we connect.</h3><p>Find a study partner, share an opportunity or help someone settle into campus life.</p></div><div className="right-card soft"><div className="eyebrow">COMING TO CAMPUSCONNECT</div><p>Student groups</p><p>Direct messages</p><p>Campus events</p><p>Profiles and discovery</p></div></aside>
+          <aside className="rightbar"><div className="right-card"><div className="eyebrow">CAMPUS SPOTLIGHT</div><h3>Good things happen when we connect.</h3><p>Find a study partner, share an opportunity or help someone settle into campus life.</p></div><div className="right-card soft"><div className="eyebrow">COMING TO CAMPUSCONNECT</div><p>Private-group invitations</p><p>Direct messages</p><p>Campus events</p><p>Member notifications</p></div></aside>
           {notice && <div className="toast" role="status">{notice}</div>}
         </div>
       )}
