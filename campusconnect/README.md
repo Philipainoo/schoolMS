@@ -78,3 +78,6 @@ This is a first working web foundation, not a finished production social network
 
 
 Before public launch, test the RLS policies using separate student accounts and configure the official UEW eligibility process. The legacy root PHP entry point is deliberately preserved.
+
+- Message reactions: verified conversation members can add/remove one reaction per emoji per message using 👍 ❤️ 😂 🎉 🙏 🔥; counts and the current user's selection update in real time.
+- Threaded replies: members can reply to a message; replies appear grouped beneath the original message, with one-level thread grouping to keep the conversation readable.
