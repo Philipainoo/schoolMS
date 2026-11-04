@@ -244,11 +244,23 @@ export default function Home() {
       const { data: people } = await supabase.from("profiles")
         .select("user_id,display_name,username,avatar_path,bio,major,department,graduation_year")
         .in("user_id", ids);
-      if (people) setProfiles((current) => {
-        const next = { ...current };
-        (people as Profile[]).forEach((person) => { next[person.user_id] = person; });
-        return next;
-      });
+      if (people) {
+        const peopleRows = people as Profile[];
+        setProfiles((current) => {
+          const next = { ...current };
+          peopleRows.forEach((person) => { next[person.user_id] = person; });
+          return next;
+        });
+        const signedResults = await Promise.all(peopleRows.filter((person) => person.avatar_path).map(async (person) => {
+          const { data: signedUrl } = await supabase.storage.from("campus-avatars").createSignedUrl(person.avatar_path as string, 3600);
+          return signedUrl?.signedUrl ? [person.user_id, signedUrl.signedUrl] as const : null;
+        }));
+        setAvatarUrls((current) => {
+          const next = { ...current };
+          signedResults.forEach((result) => { if (result) next[result[0]] = result[1]; });
+          return next;
+        });
+      }
     }
   }
 
