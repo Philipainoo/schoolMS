@@ -22,6 +22,7 @@ revoke all on public.notifications from public, anon;
 grant select on public.notifications to authenticated;
 grant update (read_at) on public.notifications to authenticated;
 
+drop policy if exists notifications_read_own on public.notifications;
 create policy notifications_read_own on public.notifications
 for select to authenticated
 using (
@@ -29,6 +30,7 @@ using (
   and institution_id = (select private.current_institution_id())
 );
 
+drop policy if exists notifications_mark_own_read on public.notifications;
 create policy notifications_mark_own_read on public.notifications
 for update to authenticated
 using (
@@ -93,10 +95,13 @@ revoke all on function private.notify_comment_created() from public, anon, authe
 revoke all on function private.notify_direct_message_created() from public, anon, authenticated;
 revoke all on function private.notify_group_invite_created() from public, anon, authenticated;
 
+drop trigger if exists campusconnect_notify_comment on public.comments;
 create trigger campusconnect_notify_comment after insert on public.comments
 for each row execute function private.notify_comment_created();
+drop trigger if exists campusconnect_notify_direct_message on public.messages;
 create trigger campusconnect_notify_direct_message after insert on public.messages
 for each row execute function private.notify_direct_message_created();
+drop trigger if exists campusconnect_notify_group_invite on public.group_invites;
 create trigger campusconnect_notify_group_invite after insert on public.group_invites
 for each row execute function private.notify_group_invite_created();
 
