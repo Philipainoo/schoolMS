@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import type { SupabaseClient, User } from "@supabase/supabase-js";
 
+type ReadMarker = { user_id: string; last_read_at: string | null };
+
 type Profile = {
   user_id: string;
   display_name: string;
@@ -50,6 +52,7 @@ export default function MessagingWorkspace({ supabase, user }: MessagingWorkspac
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [threadMessages, setThreadMessages] = useState<ChatMessage[]>([]);
+  const [readMarkers, setReadMarkers] = useState<ReadMarker[]>([]);
   const [memberSearch, setMemberSearch] = useState("");
   const [memberResult, setMemberResult] = useState<Profile | null>(null);
   const [searchBusy, setSearchBusy] = useState(false);
@@ -167,7 +170,19 @@ export default function MessagingWorkspace({ supabase, user }: MessagingWorkspac
       return { ...message, attachmentUrls: urls.filter((url): url is string => Boolean(url)) };
     }));
     setThreadMessages(hydrated);
-  }, [supabase]);
+    const readAt = new Date().toISOString();
+    const { error: markError } = await supabase.from("conversation_members")
+      .update({ last_read_at: readAt })
+      .eq("conversation_id", conversationId)
+      .eq("user_id", user.id);
+    if (markError) setNotice(markError.message);
+    const { data: markers, error: markerError } = await supabase
+      .from("conversation_members")
+      .select("user_id,last_read_at")
+      .eq("conversation_id", conversationId);
+    if (markerError) setNotice(markerError.message);
+    else setReadMarkers((markers ?? []) as ReadMarker[]);
+  }, [supabase, user.id]);
 
   useEffect(() => {
     void loadConversations();
@@ -193,6 +208,12 @@ export default function MessagingWorkspace({ supabase, user }: MessagingWorkspac
   }, [supabase, user.id, activeConversationId, loadConversations, loadThread]);
 
   const activeConversation = conversations.find((conversation) => conversation.id === activeConversationId) ?? null;
+  const lastOwnMessageId = [...threadMessages].reverse().find((message) => message.sender_id === user.id)?.id ?? null;
+  const seenByCount = readMarkers.filter((marker) =>
+    marker.user_id !== user.id &&
+    marker.last_read_at !== null &&
+    threadMessages.some((message) => message.id === lastOwnMessageId && new Date(marker.last_read_at).getTime() >= new Date(message.created_at).getTime())
+  ).length;
   const activeTitle = activeConversation
     ? activeConversation.is_group
       ? activeConversation.title || "Campus group chat"
@@ -404,6 +425,7 @@ export default function MessagingWorkspace({ supabase, user }: MessagingWorkspac
                 <p>{message.body}</p>
                 {message.attachmentUrls?.map((url) => <a className="message-image-link" href={url} target="_blank" rel="noreferrer" key={url}><img className="message-image" src={url} alt="Image shared in this conversation" /></a>)}
                 <time>{friendlyTime(message.created_at)}</time>
+                {message.id === lastOwnMessageId && <span className="message-read-receipt">{seenByCount > 0 ? (activeConversation?.is_group ? "Seen by " + seenByCount : "Seen") : "Sent"}</span>}
               </div>)}
               <div ref={threadEnd} />
             </div>
