@@ -168,7 +168,7 @@ export default function MessagingWorkspace({ supabase, user }: MessagingWorkspac
   const loadThread = useCallback(async (conversationId: string) => {
     const { data, error } = await supabase
       .from("messages")
-      .select("id,conversation_id,sender_id,body,attachment_paths,created_at")
+      .select("id,conversation_id,sender_id,body,attachment_paths,created_at,edited_at,deleted_at")
       .eq("conversation_id", conversationId)
       .order("created_at", { ascending: true })
       .limit(200);
