@@ -538,7 +538,7 @@ export default function Home() {
                   <label>Graduation year<input type="number" min="1950" max="2150" value={profileForm.graduation_year} onChange={(e) => setProfileForm((v) => ({...v,graduation_year:e.target.value}))} placeholder="e.g. 2028"/></label>
                 </div>
                 <label className="profile-bio-label">Bio<textarea maxLength={500} rows={3} value={profileForm.bio} onChange={(e) => setProfileForm((v) => ({...v,bio:e.target.value}))} placeholder="A little about you…"/></label>
-                <div className="profile-editor-actions"><span>Keep personal details you don't want public out of your bio.</span><button className="primary-button compact" disabled={profileSaving}>{profileSaving ? "Saving…" : "Save profile"}</button></div>
+                <div className="profile-editor-actions"><span>Keep personal details you don&apos;t want public out of your bio.</span><button className="primary-button compact" disabled={profileSaving}>{profileSaving ? "Saving…" : "Save profile"}</button></div>
               </form>}
             </section>
             <div className="feed-heading"><div><div className="eyebrow">MONDAY TO SUNDAY, TOGETHER</div><h1>Your campus feed</h1><p className="muted">What’s happening around UEW?</p></div><div className="campus-pill"><span/> UEW COMMUNITY</div></div>
