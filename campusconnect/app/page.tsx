@@ -16,6 +16,7 @@ type DirectMessage = { id: string; conversation_id: string; sender_id: string; b
 type ConversationSummary = { id: string; created_at: string; peer: Profile | null; lastMessage: DirectMessage | null };
 type CampusEvent = { id: string; title: string; description: string | null; starts_at: string; ends_at: string | null; location: string; organizer_id: string };
 type CampusAnnouncement = { id: string; title: string; content: string; priority: "normal" | "high"; published_at: string; author_id: string };
+type CampusNotification = { id: string; actor_id: string | null; notification_type: "comment" | "direct_message" | "group_invite"; entity_type: "post" | "message" | "group"; entity_id: string; message: string; created_at: string; read_at: string | null };
 
 const channels = [
   { id: "campus", label: "Campus life" },
@@ -78,6 +79,8 @@ export default function Home() {
   const [groupMembers, setGroupMembers] = useState<GroupMember[]>([]);
   const [inviteUsername, setInviteUsername] = useState("");
   const [myGroupInvites, setMyGroupInvites] = useState<GroupInvite[]>([]);
+  const [notifications, setNotifications] = useState<CampusNotification[]>([]);
+  const [notificationOpen, setNotificationOpen] = useState(false);
 
   async function loadFeed() {
     if (!supabase) return;
@@ -167,6 +170,7 @@ export default function Home() {
       void loadFeed();
       void loadGroups();
       void loadCampusBoard();
+      void loadNotifications();
     }
   }, [user, verificationStatus]);
 
@@ -298,6 +302,19 @@ export default function Home() {
     return () => { void supabase.removeChannel(channel); };
   }, [supabase, user, verificationStatus, activeConversationId]);
 
+  useEffect(() => {
+    if (!supabase || !user || verificationStatus !== "verified") return;
+    const channel = supabase.channel("campusconnect-notifications-" + user.id)
+      .on("postgres_changes", {
+        event: "INSERT",
+        schema: "public",
+        table: "notifications",
+        filter: "recipient_id=eq." + user.id,
+      }, () => { void loadNotifications(); })
+      .subscribe();
+    return () => { void supabase.removeChannel(channel); };
+  }, [supabase, user, verificationStatus]);
+
   async function authenticate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!supabase) return;
@@ -362,6 +379,49 @@ export default function Home() {
     ]);
     if (eventError) setNotice(eventError.message); else setCampusEvents((eventRows ?? []) as CampusEvent[]);
     if (announcementError) setNotice(announcementError.message); else setAnnouncements((announcementRows ?? []) as CampusAnnouncement[]);
+  }
+
+  async function loadNotifications() {
+    if (!supabase || !user) return;
+    const { data, error } = await supabase.from("notifications")
+      .select("id,actor_id,notification_type,entity_type,entity_id,message,created_at,read_at")
+      .order("created_at", { ascending: false })
+      .limit(40);
+    if (error) { setNotice(error.message); return; }
+    const rows = (data ?? []) as CampusNotification[];
+    setNotifications(rows);
+    const actorIds = [...new Set(rows.map((item) => item.actor_id).filter((id): id is string => Boolean(id)))];
+    if (!actorIds.length) return;
+    const { data: people, error: peopleError } = await supabase.from("profiles")
+      .select("user_id,display_name,username,avatar_path,bio,major,department,graduation_year")
+      .in("user_id", actorIds);
+    if (!peopleError && people) {
+      const index: Record<string, Profile> = {};
+      (people as Profile[]).forEach((person) => { index[person.user_id] = person; });
+      setProfiles((current) => ({ ...current, ...index }));
+    }
+  }
+
+  async function openNotification(item: CampusNotification) {
+    if (!supabase) return;
+    setNotificationOpen(false);
+    if (!item.read_at) {
+      const readAt = new Date().toISOString();
+      const { error } = await supabase.from("notifications").update({ read_at: readAt }).eq("id", item.id).is("read_at", null);
+      if (error) setNotice(error.message);
+      else setNotifications((current) => current.map((entry) => entry.id === item.id ? { ...entry, read_at: readAt } : entry));
+    }
+    if (item.entity_type === "message") {
+      setActiveView("messages");
+      await loadConversations();
+    } else if (item.entity_type === "group") {
+      setActiveView("groups");
+      setActiveGroupId(null);
+      await loadGroups();
+    } else {
+      setActiveView("feed");
+      await loadFeed();
+    }
   }
 
   async function createCampusEvent(event: FormEvent<HTMLFormElement>) {
@@ -768,6 +828,8 @@ export default function Home() {
     if (!supabase) return;
     await supabase.auth.signOut();
     setPosts([]);
+    setNotifications([]);
+    setNotificationOpen(false);
     setNotice("You have signed out.");
   }
 
@@ -781,7 +843,24 @@ export default function Home() {
     <main className="shell">
       <header className="topbar">
         <a className="brand" href="#"><span className="brand-mark">C</span><span>Campus<span className="brand-accent">Connect</span><small>UEW COMMUNITY</small></span></a>
-        {user ? <button className="text-button" onClick={signOut}>Sign out</button> : <span className="top-note">University of Education, Winneba</span>}
+        {user ? <div className="topbar-actions">
+          {verificationStatus === "verified" && <div className="notification-menu-wrap">
+            <button type="button" className="notification-trigger" onClick={() => setNotificationOpen((open) => !open)} aria-expanded={notificationOpen}>
+              <span aria-hidden="true">♢</span> Notifications
+              {notifications.some((item) => !item.read_at) && <b>{notifications.filter((item) => !item.read_at).length}</b>}
+            </button>
+            {notificationOpen && <div className="notification-popover">
+              <div className="notification-popover-heading"><strong>Notifications</strong><button type="button" onClick={() => setNotificationOpen(false)}>Close</button></div>
+              {notifications.length === 0 ? <p className="notification-empty">You’re all caught up. New comments, messages and community invitations will appear here.</p> : <div className="notification-list">
+                {notifications.map((item) => <button type="button" key={item.id} className={item.read_at ? "notification-item" : "notification-item unread"} onClick={() => void openNotification(item)}>
+                  <span className="notification-dot" aria-hidden="true"/>
+                  <span className="notification-item-copy"><strong>{item.actor_id ? profiles[item.actor_id]?.display_name || "A UEW member" : "CampusConnect"}</strong><span>{item.message}</span><time>{new Date(item.created_at).toLocaleString("en-GH", { dateStyle: "medium", timeStyle: "short", timeZone: "Africa/Accra" })}</time></span>
+                </button>)}
+              </div>}
+            </div>}
+          </div>}
+          <button className="text-button" onClick={signOut}>Sign out</button>
+        </div> : <span className="top-note">University of Education, Winneba</span>}
       </header>
 
       {!user ? (
