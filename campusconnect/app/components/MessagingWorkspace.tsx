@@ -330,8 +330,8 @@ export default function MessagingWorkspace({ supabase, user }: MessagingWorkspac
       setManageMemberResult(null);
       setManageMemberSearch("");
       await loadConversations();
-      await loadThread(activeConversationId);
       if (action === "leave") setActiveConversationId(null);
+      else await loadThread(activeConversationId);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Could not update group membership.");
     } finally {
