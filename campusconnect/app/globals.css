@@ -75,3 +75,15 @@
   .message-compose input[aria-label="Write a message"]{flex-basis:100%}
   .message-attach-button{min-height:38px}
 }
+
+
+/* Feed safety and community moderation controls */
+.post-safety-actions{display:flex;align-items:center;gap:5px;margin-left:auto}
+.post-safety-actions button{border:1px solid #e2e9e3;background:#fff;color:#647268;border-radius:7px;padding:5px 8px;font:700 9px Manrope;cursor:pointer}
+.post-safety-actions button:hover{border-color:#c6d9c8;color:#276b43;background:#f5faf5}
+.post-safety-actions button:disabled{opacity:.55;cursor:wait}
+.post-report-form{display:grid;gap:9px;margin:0 0 14px;padding:13px;border:1px solid #dce8dd;border-radius:11px;background:#f7faf7}
+.post-report-form strong{font:800 11px Manrope;color:#294a32}
+.post-report-form select,.post-report-form textarea{width:100%;border:1px solid #dce5dd;border-radius:8px;background:#fff;padding:9px 10px;font:inherit;font-size:10px;color:#33443a}
+.post-report-form>div{display:flex;gap:8px;align-items:center}
+@media(max-width:560px){.post-head{flex-wrap:wrap}.post-safety-actions{margin-left:auto}.post-report-form>div{flex-wrap:wrap}}
