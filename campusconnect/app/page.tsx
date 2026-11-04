@@ -13,8 +13,6 @@ type CampusGroup = { id: string; institution_id: string; owner_id: string; name:
 type GroupPost = { id: string; group_id: string; author_id: string; body: string; created_at: string };
 type GroupMember = { user_id: string; role: "member" | "moderator" | "admin" };
 type GroupInvite = { id: string; group_id: string; invited_by: string; invited_at: string; group_name?: string };
-type DirectMessage = { id: string; conversation_id: string; sender_id: string; body: string; created_at: string };
-type ConversationSummary = { id: string; created_at: string; peer: Profile | null; lastMessage: DirectMessage | null };
 type CampusEvent = { id: string; title: string; description: string | null; starts_at: string; ends_at: string | null; location: string; organizer_id: string };
 type CampusAnnouncement = { id: string; title: string; content: string; priority: "normal" | "high"; published_at: string; author_id: string };
 type CampusNotification = { id: string; actor_id: string | null; notification_type: "comment" | "direct_message" | "group_invite"; entity_type: "post" | "message" | "group"; entity_id: string; message: string; created_at: string; read_at: string | null };
@@ -59,14 +57,6 @@ export default function Home() {
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [activeView, setActiveView] = useState<"feed" | "groups" | "messages" | "events">("feed");
-  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
-  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
-  const [threadMessages, setThreadMessages] = useState<DirectMessage[]>([]);
-  const [messageDraft, setMessageDraft] = useState("");
-  const [messageBusy, setMessageBusy] = useState(false);
-  const [memberSearch, setMemberSearch] = useState("");
-  const [memberResult, setMemberResult] = useState<Profile | null>(null);
-  const [messageSearchBusy, setMessageSearchBusy] = useState(false);
   const [groups, setGroups] = useState<CampusGroup[]>([]);
   const [groupMemberships, setGroupMemberships] = useState<Record<string, string>>({});
   const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
@@ -175,134 +165,6 @@ export default function Home() {
       void loadNotifications();
     }
   }, [user, verificationStatus]);
-
-  async function loadConversations() {
-    if (!supabase || !user) return;
-    const { data: rows, error } = await supabase.from("conversations")
-      .select("id,created_at")
-      .eq("is_group", false)
-      .order("created_at", { ascending: false })
-      .limit(60);
-    if (error) { setNotice(error.message); return; }
-    const ids = (rows ?? []).map((row) => row.id as string);
-    if (!ids.length) { setConversations([]); return; }
-    const { data: members, error: membersError } = await supabase.from("conversation_members")
-      .select("conversation_id,user_id").in("conversation_id", ids);
-    if (membersError) { setNotice(membersError.message); return; }
-    const peers = new Map<string, string>();
-    (members ?? []).forEach((member) => {
-      if (member.user_id !== user.id) peers.set(member.conversation_id, member.user_id);
-    });
-    const peerIds = [...new Set([...peers.values()])];
-    const { data: people } = peerIds.length ? await supabase.from("profiles")
-      .select("user_id,display_name,username,avatar_path,bio,major,department,graduation_year")
-      .in("user_id", peerIds) : { data: [] as Profile[] };
-    const peopleMap: Record<string, Profile> = {};
-    ((people ?? []) as Profile[]).forEach((person) => { peopleMap[person.user_id] = person; });
-    if (people) setProfiles((current) => ({ ...current, ...peopleMap }));
-    const { data: messageRows, error: messagesError } = await supabase.from("messages")
-      .select("id,conversation_id,sender_id,body,created_at")
-      .in("conversation_id", ids)
-      .order("created_at", { ascending: false })
-      .limit(300);
-    if (messagesError) { setNotice(messagesError.message); return; }
-    const latest = new Map<string, DirectMessage>();
-    ((messageRows ?? []) as DirectMessage[]).forEach((message) => {
-      if (!latest.has(message.conversation_id)) latest.set(message.conversation_id, message);
-    });
-    const summaries = (rows ?? []).map((row) => ({
-      id: row.id as string,
-      created_at: row.created_at as string,
-      peer: peopleMap[peers.get(row.id as string) || ""] || null,
-      lastMessage: latest.get(row.id as string) || null,
-    })).sort((a, b) => new Date(b.lastMessage?.created_at || b.created_at).getTime() - new Date(a.lastMessage?.created_at || a.created_at).getTime());
-    setConversations(summaries);
-  }
-
-  async function loadThreadMessages(conversationId: string) {
-    if (!supabase) return;
-    const { data, error } = await supabase.from("messages")
-      .select("id,conversation_id,sender_id,body,created_at")
-      .eq("conversation_id", conversationId)
-      .order("created_at", { ascending: true })
-      .limit(150);
-    if (error) { setNotice(error.message); return; }
-    setThreadMessages((data ?? []) as DirectMessage[]);
-  }
-
-  async function findMessageMember(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!supabase || !memberSearch.trim()) return;
-    setMessageSearchBusy(true); setMemberResult(null); setNotice("");
-    try {
-      const handle = memberSearch.trim().replace(/^@/, "").toLowerCase();
-      const { data, error } = await supabase.from("profiles")
-        .select("user_id,display_name,username,avatar_path,bio,major,department,graduation_year")
-        .eq("username", handle).maybeSingle();
-      if (error) throw error;
-      if (!data || data.user_id === user?.id) throw new Error("No other UEW member was found with that username.");
-      setMemberResult(data as Profile);
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Could not search for that member.");
-    } finally { setMessageSearchBusy(false); }
-  }
-
-  async function startDirectConversation(person: Profile) {
-    if (!supabase) return;
-    setMessageBusy(true); setNotice("");
-    try {
-      const { data, error } = await supabase.rpc("open_direct_conversation", { target_user_id: person.user_id });
-      if (error) throw error;
-      const conversationId = data as string;
-      setMemberResult(null); setMemberSearch("");
-      setActiveConversationId(conversationId);
-      setActiveView("messages");
-      await loadConversations();
-      await loadThreadMessages(conversationId);
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Could not open this conversation.");
-    } finally { setMessageBusy(false); }
-  }
-
-  async function sendDirectMessage(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!supabase || !user || !activeConversationId || !messageDraft.trim()) return;
-    setMessageBusy(true); setNotice("");
-    try {
-      const { data: account, error: accountError } = await supabase.from("users")
-        .select("institution_id").eq("id", user.id).single();
-      if (accountError || !account) throw new Error("Your UEW account could not be loaded.");
-      const { error } = await supabase.from("messages").insert({
-        institution_id: account.institution_id,
-        conversation_id: activeConversationId,
-        sender_id: user.id,
-        body: messageDraft.trim(),
-      });
-      if (error) throw error;
-      setMessageDraft("");
-      await Promise.all([loadThreadMessages(activeConversationId), loadConversations()]);
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Your message could not be sent.");
-    } finally { setMessageBusy(false); }
-  }
-
-  async function openConversation(conversationId: string) {
-    setActiveConversationId(conversationId);
-    setThreadMessages([]);
-    await loadThreadMessages(conversationId);
-  }
-
-  useEffect(() => {
-    if (!supabase || !user || verificationStatus !== "verified") return;
-    const channel = supabase.channel("campusconnect-direct-messages-" + user.id)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, (payload) => {
-        const incoming = payload.new as DirectMessage;
-        if (incoming.conversation_id === activeConversationId) void loadThreadMessages(incoming.conversation_id);
-        void loadConversations();
-      })
-      .subscribe();
-    return () => { void supabase.removeChannel(channel); };
-  }, [supabase, user, verificationStatus, activeConversationId]);
 
   useEffect(() => {
     if (!supabase || !user || verificationStatus !== "verified") return;
