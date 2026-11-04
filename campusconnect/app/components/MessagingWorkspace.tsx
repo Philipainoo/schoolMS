@@ -13,12 +13,15 @@ type Profile = {
   avatar_path: string | null;
 };
 
+type GroupMember = Profile & { role: "owner" | "admin" | "member" };
+
 type Conversation = {
   id: string;
   created_at: string;
+  created_by: string;
   is_group: boolean;
   title: string | null;
-  members: Profile[];
+  members: GroupMember[];
   lastMessage: ChatMessage | null;
 };
 
@@ -65,6 +68,10 @@ export default function MessagingWorkspace({ supabase, user }: MessagingWorkspac
   const [groupSearchResult, setGroupSearchResult] = useState<Profile | null>(null);
   const [groupMembers, setGroupMembers] = useState<Profile[]>([]);
   const [groupBusy, setGroupBusy] = useState(false);
+  const [manageMembersOpen, setManageMembersOpen] = useState(false);
+  const [manageMemberSearch, setManageMemberSearch] = useState("");
+  const [manageMemberResult, setManageMemberResult] = useState<Profile | null>(null);
+  const [manageBusy, setManageBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [listBusy, setListBusy] = useState(false);
   const imageInput = useRef<HTMLInputElement>(null);
@@ -74,7 +81,7 @@ export default function MessagingWorkspace({ supabase, user }: MessagingWorkspac
     setListBusy(true);
     const { data: rows, error } = await supabase
       .from("conversations")
-      .select("id,created_at,is_group,title")
+      .select("id,created_at,created_by,is_group,title")
       .order("created_at", { ascending: false })
       .limit(60);
     if (error) {
@@ -91,7 +98,7 @@ export default function MessagingWorkspace({ supabase, user }: MessagingWorkspac
 
     const { data: memberRows, error: membersError } = await supabase
       .from("conversation_members")
-      .select("conversation_id,user_id")
+      .select("conversation_id,user_id,role")
       .in("conversation_id", ids);
     if (membersError) {
       setNotice(membersError.message);
@@ -128,16 +135,18 @@ export default function MessagingWorkspace({ supabase, user }: MessagingWorkspac
       if (!latest.has(message.conversation_id)) latest.set(message.conversation_id, message);
     });
 
-    const memberMap = new Map<string, Profile[]>();
+    const memberMap = new Map<string, GroupMember[]>();
     (memberRows ?? []).forEach((row) => {
       const person = peopleMap.get(row.user_id as string);
       if (!person) return;
-      memberMap.set(row.conversation_id as string, [...(memberMap.get(row.conversation_id as string) ?? []), person]);
+      const member = { ...person, role: (row.role as GroupMember["role"]) || "member" };
+      memberMap.set(row.conversation_id as string, [...(memberMap.get(row.conversation_id as string) ?? []), member]);
     });
 
     const result: Conversation[] = (rows ?? []).map((row) => ({
       id: row.id as string,
       created_at: row.created_at as string,
+      created_by: row.created_by as string,
       is_group: Boolean(row.is_group),
       title: (row.title as string | null) ?? null,
       members: memberMap.get(row.id as string) ?? [],
@@ -214,6 +223,9 @@ export default function MessagingWorkspace({ supabase, user }: MessagingWorkspac
     marker.last_read_at !== null &&
     threadMessages.some((message) => message.id === lastOwnMessageId && new Date(marker.last_read_at).getTime() >= new Date(message.created_at).getTime())
   ).length;
+  const currentGroupRole = activeConversation?.members.find((member) => member.user_id === user.id)?.role ?? null;
+  const canManageGroupMembers = activeConversation?.is_group && (currentGroupRole === "owner" || currentGroupRole === "admin");
+  const isGroupOwner = currentGroupRole === "owner";
   const activeTitle = activeConversation
     ? activeConversation.is_group
       ? activeConversation.title || "Campus group chat"
@@ -301,6 +313,67 @@ export default function MessagingWorkspace({ supabase, user }: MessagingWorkspac
       setNotice(error instanceof Error ? error.message : "Could not create the group chat.");
     } finally {
       setGroupBusy(false);
+    }
+  }
+
+  async function manageGroupMember(targetUserId: string, action: "add" | "remove" | "leave") {
+    if (!activeConversationId) return;
+    setManageBusy(true);
+    setNotice("");
+    try {
+      const { error } = await supabase.rpc("manage_group_conversation_member", {
+        target_conversation_id: activeConversationId,
+        target_user_id: targetUserId,
+        action,
+      });
+      if (error) throw error;
+      setManageMemberResult(null);
+      setManageMemberSearch("");
+      await loadConversations();
+      await loadThread(activeConversationId);
+      if (action === "leave") setActiveConversationId(null);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Could not update group membership.");
+    } finally {
+      setManageBusy(false);
+    }
+  }
+
+  async function changeGroupAdmin(targetUserId: string, makeAdmin: boolean) {
+    if (!activeConversationId) return;
+    setManageBusy(true);
+    setNotice("");
+    try {
+      const { error } = await supabase.rpc("set_group_conversation_admin", {
+        target_conversation_id: activeConversationId,
+        target_user_id: targetUserId,
+        make_admin: makeAdmin,
+      });
+      if (error) throw error;
+      await loadConversations();
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Could not update administrator role.");
+    } finally {
+      setManageBusy(false);
+    }
+  }
+
+  async function transferGroupOwnership(targetUserId: string) {
+    if (!activeConversationId || !window.confirm("Transfer ownership of this group? You will become an administrator.")) return;
+    setManageBusy(true);
+    setNotice("");
+    try {
+      const { error } = await supabase.rpc("transfer_group_conversation_ownership", {
+        target_conversation_id: activeConversationId,
+        target_user_id: targetUserId,
+      });
+      if (error) throw error;
+      await loadConversations();
+      setManageMembersOpen(false);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Could not transfer group ownership.");
+    } finally {
+      setManageBusy(false);
     }
   }
 
@@ -417,9 +490,41 @@ export default function MessagingWorkspace({ supabase, user }: MessagingWorkspac
         <section className="message-thread">
           {activeConversationId ? <>
             <div className="message-thread-heading">
-              <strong>{activeTitle}</strong>
-              <span>{activeConversation?.is_group ? "Group conversation · " + activeConversation.members.length + " members" : "Private one-to-one conversation"}</span>
+              <div className="message-thread-title">
+                <strong>{activeTitle}</strong>
+                <span>{activeConversation?.is_group ? "Group conversation · " + activeConversation.members.length + " members" : "Private one-to-one conversation"}</span>
+              </div>
+              {activeConversation?.is_group && <button type="button" className="message-manage-toggle" onClick={() => setManageMembersOpen((open) => !open)}>{manageMembersOpen ? "Close members" : "Manage members"}</button>}
             </div>
+            {activeConversation?.is_group && manageMembersOpen && <section className="group-member-manager">
+              <div className="group-member-manager-heading">
+                <div><strong>Group members</strong><span>{activeConversation.members.length} of 20 members</span></div>
+                <span className="group-manager-role">{currentGroupRole === "owner" ? "Owner" : currentGroupRole === "admin" ? "Administrator" : "Member"}</span>
+              </div>
+              {canManageGroupMembers && <form className="group-member-add" onSubmit={(event) => { event.preventDefault(); void searchMember(manageMemberSearch, setManageMemberResult, setSearchBusy); }}>
+                <input value={manageMemberSearch} onChange={(event) => setManageMemberSearch(event.target.value)} placeholder="Find a verified UEW member by username" aria-label="Search member to add" />
+                <button type="submit" className="primary-button compact" disabled={searchBusy || !manageMemberSearch.trim()}>Find</button>
+              </form>}
+              {manageMemberResult && <div className="message-member-result">
+                <div><strong>{manageMemberResult.display_name}</strong><span>@{manageMemberResult.username}</span></div>
+                <button type="button" className="primary-button compact" disabled={manageBusy} onClick={() => void manageGroupMember(manageMemberResult.user_id, "add")}>Add to group</button>
+              </div>}
+              <div className="group-member-list">
+                {activeConversation.members.map((member) => <div className="group-member-row" key={member.user_id}>
+                  <span className="conversation-avatar">{initials(member.display_name)}</span>
+                  <span className="group-member-name"><strong>{member.display_name}{member.user_id === user.id ? " (you)" : ""}</strong><small>@{member.username}</small></span>
+                  <span className={"group-member-role " + member.role}>{member.role}</span>
+                  {isGroupOwner && member.role !== "owner" && <div className="group-member-actions">
+                    <button type="button" disabled={manageBusy} onClick={() => void changeGroupAdmin(member.user_id, member.role !== "admin")}>{member.role === "admin" ? "Remove admin" : "Make admin"}</button>
+                    <button type="button" disabled={manageBusy} onClick={() => void transferGroupOwnership(member.user_id)}>Make owner</button>
+                    <button type="button" disabled={manageBusy} onClick={() => void manageGroupMember(member.user_id, "remove")}>Remove</button>
+                  </div>}
+                  {currentGroupRole === "admin" && member.role === "member" && <button type="button" className="group-member-remove" disabled={manageBusy} onClick={() => void manageGroupMember(member.user_id, "remove")}>Remove</button>}
+                </div>)}
+              </div>
+              {currentGroupRole && currentGroupRole !== "owner" && <button type="button" className="group-leave-button" disabled={manageBusy} onClick={() => { if (window.confirm("Leave this group conversation?")) void manageGroupMember(user.id, "leave"); }}>Leave group</button>}
+              {isGroupOwner && <p className="group-owner-note">As owner, you can add or remove members, appoint administrators, and transfer ownership. Administrators can manage regular members.</p>}
+            </section>}
             <div className="message-thread-body">
               {threadMessages.length === 0 ? <div className="message-thread-empty">Say hello and start the conversation.</div> : threadMessages.map((message) => <div key={message.id} className={message.sender_id === user.id ? "message-bubble mine" : "message-bubble"}>
                 <p>{message.body}</p>
