@@ -56,6 +56,8 @@ The app uses existing tables:
 - `messages`
 - `user_blocks`
 - `group_invites`
+- `campus_events`
+- `announcements`
 
 The database already has row-level security enabled. Existing `campus_events` and `announcements` tables are used for the campus board: verified UEW members can read institution-scoped records, and verified faculty accounts can publish official items. The app uses only the public Supabase client and relies on those database policies; no service-role key is included. The `campus-avatars` private Storage bucket is provisioned by the `campusconnect_profile_avatars` migration. Group discussion tables and tenant-safe membership policies are provisioned by `campusconnect_groups_and_discussions`; group creation is protected by the tenant-scoped `groups_insert_owner` policy; a private-schema trigger adds the creator as group admin without exposing a privileged RPC. Private group invitations, verified-recipient acceptance, moderator permissions and column-scoped role changes are provisioned by `campusconnect_group_invites_and_moderation` and `campusconnect_group_role_column_grants`. Direct-message creation is handled by the `open_direct_conversation` SECURITY INVOKER RPC. Narrow INSERT policies enforce verified UEW membership, one-to-one membership and block checks without a SECURITY DEFINER API function. Message reads and writes are limited by conversation-membership RLS, and new messages are streamed through Supabase Realtime. Storage policies restrict uploads, replacement and deletion to each member's own user-ID folder, and allow reads only for verified campus members. Signed URLs are short-lived.
 
