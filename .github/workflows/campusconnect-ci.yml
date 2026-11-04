@@ -2,7 +2,7 @@ name: CampusConnect CI
 
 on:
   push:
-    branches: [campusconnect-conversion]
+    branches: [campusconnect-conversion, campusconnect-messaging-enhancements]
     paths:
       - "campusconnect/**"
       - ".github/workflows/campusconnect-ci.yml"
