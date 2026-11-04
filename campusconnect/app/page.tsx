@@ -55,6 +55,7 @@ export default function Home() {
   const [groupName, setGroupName] = useState("");
   const [groupDescription, setGroupDescription] = useState("");
   const [groupCategory, setGroupCategory] = useState("Academic");
+  const [groupVisibility, setGroupVisibility] = useState<"public" | "private">("public");
   const [groupBusy, setGroupBusy] = useState(false);
   const [groupMembers, setGroupMembers] = useState<GroupMember[]>([]);
   const [inviteUsername, setInviteUsername] = useState("");
@@ -389,10 +390,10 @@ export default function Home() {
         name: groupName.trim(),
         description: groupDescription.trim() || null,
         category: groupCategory,
-        visibility: "public",
+        visibility: groupVisibility,
       }).select("id").single();
       if (error) throw error;
-      setGroupName(""); setGroupDescription("");
+      setGroupName(""); setGroupDescription(""); setGroupVisibility("public");
       await loadGroups();
       const groupId = data.id as string;
       setActiveGroupId(groupId);
@@ -687,7 +688,7 @@ export default function Home() {
                 <div className="groups-view">
                   <button className="back-link" onClick={() => { setActiveGroupId(null); setGroupPosts([]); }}>← All communities</button>
                   <div className="group-detail-card card">
-                    <div className="group-detail-top"><div><div className="eyebrow">{activeGroup.category || "UEW COMMUNITY"}</div><h1>{activeGroup.name}</h1><p>{activeGroup.description || "A place for UEW members to connect and share."}</p></div><span className="group-type-tag">PUBLIC</span></div>
+                    <div className="group-detail-top"><div><div className="eyebrow">{activeGroup.category || "UEW COMMUNITY"}</div><h1>{activeGroup.name}</h1><p>{activeGroup.description || "A place for UEW members to connect and share."}</p></div><span className="group-type-tag">{activeGroup.visibility === "public" ? "PUBLIC" : "PRIVATE"}</span></div>
                     <div className="group-detail-meta"><span>{groupMemberships[activeGroup.id] === "admin" ? "Community owner" : groupMemberships[activeGroup.id] === "moderator" ? "Moderator" : "Member"}</span><button className="profile-edit-button" disabled={groupBusy || activeGroup.owner_id === user.id} onClick={() => leaveGroup(activeGroup)}>{activeGroup.owner_id === user.id ? "You own this group" : "Leave group"}</button></div>
                   </div>
                   {(activeGroup.owner_id === user.id || groupMemberships[activeGroup.id] === "moderator" || groupMemberships[activeGroup.id] === "admin") && <form className="group-invite-card card" onSubmit={sendGroupInvite}><div><strong>Invite a UEW member</strong><p>Enter their exact CampusConnect username.</p></div><div className="group-invite-fields"><input value={inviteUsername} onChange={(e) => setInviteUsername(e.target.value)} placeholder="e.g. ama_owusu" aria-label="Member username" required/><button className="primary-button compact" disabled={groupBusy || !inviteUsername.trim()}>{groupBusy ? "Sending…" : "Send invite"} <span>→</span></button></div></form>}
@@ -709,16 +710,16 @@ export default function Home() {
                   <div className="feed-heading"><div><div className="eyebrow">FIND YOUR PEOPLE</div><h1>Campus communities</h1><p className="muted">Join conversations and learn with people who share your interests.</p></div><div className="campus-pill"><span/> UEW GROUPS</div></div>
                   <form className="group-create-card card" onSubmit={createGroup}>
                     <div className="group-create-heading"><div><strong>Create a community</strong><p>Bring classmates and campus friends together around an interest.</p></div><span>✳</span></div>
-                    <div className="group-create-fields"><label>Community name<input required minLength={3} maxLength={80} value={groupName} onChange={(e) => setGroupName(e.target.value)} placeholder="e.g. UEW Level 200 Study Circle"/></label><label>Category<select value={groupCategory} onChange={(e) => setGroupCategory(e.target.value)}><option>Academic</option><option>Department</option><option>Hall & residence</option><option>Sports</option><option>Arts & culture</option><option>Career & business</option><option>Social</option></select></label></div>
+                    <div className="group-create-fields"><label>Community name<input required minLength={3} maxLength={80} value={groupName} onChange={(e) => setGroupName(e.target.value)} placeholder="e.g. UEW Level 200 Study Circle"/></label><label>Category<select value={groupCategory} onChange={(e) => setGroupCategory(e.target.value)}><option>Academic</option><option>Department</option><option>Hall & residence</option><option>Sports</option><option>Arts & culture</option><option>Career & business</option><option>Social</option></select></label><label>Visibility<select value={groupVisibility} onChange={(e) => setGroupVisibility(e.target.value as "public" | "private")}><option value="public">Public — anyone can join</option><option value="private">Private — invite only</option></select></label></div>
                     <label className="group-description-label">Description<textarea rows={2} maxLength={500} value={groupDescription} onChange={(e) => setGroupDescription(e.target.value)} placeholder="What is this community about?"/></label>
-                    <div className="group-create-footer"><span>New communities are public to verified UEW members.</span><button className="primary-button compact" disabled={groupBusy || groupName.trim().length < 3}>{groupBusy ? "Creating…" : "Create community"} <span>→</span></button></div>
+                    <div className="group-create-footer"><span>{groupVisibility === "public" ? "Public communities can be joined by verified UEW members." : "Private communities are hidden until a member accepts an invitation."}</span><button className="primary-button compact" disabled={groupBusy || groupName.trim().length < 3}>{groupBusy ? "Creating…" : "Create community"} <span>→</span></button></div>
                   </form>
                   <div className="groups-section-heading"><h2>Explore communities</h2><span>{groups.length} found</span></div>
                   <div className="group-grid">
                     {groups.length === 0 ? <div className="empty card"><div className="empty-icon">◎</div><h3>No communities yet</h3><p>Create the first UEW community and invite people to join.</p></div> : groups.map((group) => {
                       const role = groupMemberships[group.id];
                       const owner = profiles[group.owner_id];
-                      return <article className="group-card card" key={group.id}><div className="group-card-top"><span className="group-icon">◎</span><span className="group-type-tag">{group.visibility === "public" ? "PUBLIC" : "PRIVATE"}</span></div><div className="eyebrow">{group.category || "CAMPUS COMMUNITY"}</div><h3>{group.name}</h3><p>{group.description || "A community for UEW members to connect."}</p><div className="group-card-owner">Created by {owner?.display_name || "UEW member"}</div><div className="group-card-actions">{role ? <><button className="primary-button compact" onClick={() => { setActiveGroupId(group.id); void loadGroupPosts(group.id); }}>Open community →</button>{group.owner_id !== user.id && <button className="profile-edit-button" disabled={groupBusy} onClick={() => leaveGroup(group)}>Leave</button>}</> : group.visibility === "public" ? <button className="primary-button compact" disabled={groupBusy} onClick={() => joinGroup(group)}>Join community <span>→</span></button> : <span className="invite-only">Invite only</span>}</div></article>;
+                      return <article className="group-card card" key={group.id}><div className="group-card-top"><span className="group-icon">◎</span><span className="group-type-tag">{group.visibility === "public" ? "PUBLIC" : "PRIVATE"}</span></div><div className="eyebrow">{group.category || "CAMPUS COMMUNITY"}</div><h3>{group.name}</h3><p>{group.description || "A community for UEW members to connect."}</p><div className="group-card-owner">Created by {owner?.display_name || "UEW member"}</div><div className="group-card-actions">{role ? <><button className="primary-button compact" onClick={() => { setActiveGroupId(group.id); void loadGroupPosts(group.id); void loadGroupMembers(group.id); }}>Open community →</button>{group.owner_id !== user.id && <button className="profile-edit-button" disabled={groupBusy} onClick={() => leaveGroup(group)}>Leave</button>}</> : group.visibility === "public" ? <button className="primary-button compact" disabled={groupBusy} onClick={() => joinGroup(group)}>Join community <span>→</span></button> : <span className="invite-only">Invite only</span>}</div></article>;
                     })}
                   </div>
                 </div>
