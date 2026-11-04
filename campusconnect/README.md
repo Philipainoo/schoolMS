@@ -40,6 +40,7 @@ The app uses existing tables:
 - `users`
 - `profiles`
 - `posts`
+- `comments`
 
 The database already has row-level security enabled. The app uses only the public Supabase client and relies on those database policies; no service-role key is included. The `campus-avatars` private Storage bucket is provisioned by the `campusconnect_profile_avatars` migration. Storage policies restrict uploads, replacement and deletion to each member's own user-ID folder, and allow reads only for verified campus members. Signed URLs are short-lived.
 
