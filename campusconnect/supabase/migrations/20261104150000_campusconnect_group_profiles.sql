@@ -57,7 +57,7 @@ using (
     select 1
     from public.conversation_members cm
     join public.conversations c on c.id = cm.conversation_id
-    where cm.conversation_id = (storage.foldername(name))[2]::uuid
+    where cm.conversation_id::text = (storage.foldername(name))[2]
       and cm.user_id = (select auth.uid())
       and c.is_group
       and c.institution_id = (select private.current_institution_id())
@@ -76,7 +76,7 @@ with check (
     select 1
     from public.conversation_members cm
     join public.conversations c on c.id = cm.conversation_id
-    where cm.conversation_id = (storage.foldername(name))[2]::uuid
+    where cm.conversation_id::text = (storage.foldername(name))[2]
       and cm.user_id = (select auth.uid())
       and cm.role in ('owner', 'admin')
       and c.is_group
@@ -95,7 +95,7 @@ using (
     select 1
     from public.conversation_members cm
     join public.conversations c on c.id = cm.conversation_id
-    where cm.conversation_id = (storage.foldername(name))[2]::uuid
+    where cm.conversation_id::text = (storage.foldername(name))[2]
       and cm.user_id = (select auth.uid())
       and cm.role in ('owner', 'admin')
       and c.is_group
