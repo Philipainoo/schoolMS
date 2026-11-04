@@ -92,3 +92,41 @@
 /* Message delivery and read receipts */
 .message-read-receipt{display:block;margin-top:3px;text-align:right;font-size:8px;line-height:1.2;font-weight:800;letter-spacing:.2px;color:#5e8a68}
 .message-bubble:not(.mine) .message-read-receipt{display:none}
+
+
+/* CampusConnect group member management */
+.message-thread-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.message-thread-title{display:grid;gap:3px;min-width:0}
+.message-manage-toggle{flex:none;border:1px solid #dce8dd;border-radius:8px;background:#f7faf7;color:#276b43;padding:8px 10px;font:800 9px Manrope;cursor:pointer}
+.message-manage-toggle:hover{background:#eaf4eb}
+.group-member-manager{padding:13px 15px;border-bottom:1px solid var(--line);background:#fbfdfb;display:grid;gap:11px}
+.group-member-manager-heading{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.group-member-manager-heading>div{display:grid;gap:3px}
+.group-member-manager-heading strong{font:800 11px Manrope;color:var(--ink)}
+.group-member-manager-heading>div>span{font-size:9px;color:var(--muted)}
+.group-manager-role{border-radius:20px;padding:5px 8px;background:#e9f3e9;color:#326b42;font-size:8px;font-weight:800;text-transform:uppercase}
+.group-member-add{display:flex;gap:7px}
+.group-member-add input{flex:1;min-width:0;border:1px solid var(--line);border-radius:8px;padding:9px 10px;font:inherit;font-size:10px;outline:none}
+.group-member-add input:focus{border-color:var(--green)}
+.group-member-list{display:grid;gap:7px;max-height:230px;overflow:auto}
+.group-member-row{display:flex;align-items:center;gap:8px;min-width:0;padding:7px 8px;border:1px solid #edf1ed;border-radius:9px;background:#fff}
+.group-member-row .conversation-avatar{width:30px;height:30px;flex:none;font-size:9px}
+.group-member-name{display:grid;gap:2px;min-width:0;flex:1}
+.group-member-name strong{font-size:9px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.group-member-name small{font-size:8px;color:var(--muted)}
+.group-member-role{font-size:7px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;color:#748077}
+.group-member-role.owner{color:#276b43}
+.group-member-role.admin{color:#94631d}
+.group-member-actions{display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end}
+.group-member-actions button,.group-member-remove{border:1px solid #e0e8e1;border-radius:6px;background:#fff;color:#4c6652;padding:5px 6px;font:700 8px Manrope;cursor:pointer}
+.group-member-actions button:last-child,.group-member-remove{color:#a34c45}
+.group-member-actions button:disabled,.group-member-remove:disabled{opacity:.5;cursor:wait}
+.group-leave-button{justify-self:start;border:1px solid #f0d9d7;border-radius:7px;background:#fff8f7;color:#a34c45;padding:7px 10px;font:800 9px Manrope;cursor:pointer}
+.group-owner-note{margin:0;font-size:8px;line-height:1.5;color:var(--muted)}
+@media(max-width:560px){
+  .message-thread-heading{align-items:flex-start}
+  .group-member-row{flex-wrap:wrap}
+  .group-member-name{min-width:calc(100% - 90px)}
+  .group-member-actions{width:100%;padding-left:38px;justify-content:flex-start}
+  .group-member-actions button{font-size:8px}
+}
