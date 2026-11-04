@@ -56,6 +56,7 @@ export default function MessagingWorkspace({ supabase, user }: MessagingWorkspac
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [threadMessages, setThreadMessages] = useState<ChatMessage[]>([]);
   const [readMarkers, setReadMarkers] = useState<ReadMarker[]>([]);
+  const [typingUsers, setTypingUsers] = useState<Array<{ user_id: string; display_name: string }>>([]);
   const [memberSearch, setMemberSearch] = useState("");
   const [memberResult, setMemberResult] = useState<Profile | null>(null);
   const [searchBusy, setSearchBusy] = useState(false);
@@ -76,6 +77,8 @@ export default function MessagingWorkspace({ supabase, user }: MessagingWorkspac
   const [listBusy, setListBusy] = useState(false);
   const imageInput = useRef<HTMLInputElement>(null);
   const threadEnd = useRef<HTMLDivElement>(null);
+  const typingChannelRef = useRef<ReturnType<SupabaseClient["channel"]> | null>(null);
+  const typingStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loadConversations = useCallback(async () => {
     setListBusy(true);
@@ -216,7 +219,74 @@ export default function MessagingWorkspace({ supabase, user }: MessagingWorkspac
     return () => { void supabase.removeChannel(channel); };
   }, [supabase, user.id, activeConversationId, loadConversations, loadThread]);
 
+
   const activeConversation = conversations.find((conversation) => conversation.id === activeConversationId) ?? null;
+  const typingDisplayName = activeConversation?.members.find((member) => member.user_id === user.id)?.display_name ?? "UEW member";
+
+  useEffect(() => {
+    if (!activeConversationId) {
+      setTypingUsers([]);
+      return;
+    }
+
+    const channel = supabase.channel(
+      "campusconnect:conversation:" + activeConversationId,
+      { config: { private: true, presence: { key: user.id } } }
+    );
+    typingChannelRef.current = channel;
+
+    channel.on("presence", { event: "sync" }, () => {
+      const presence = channel.presenceState() as Record<string, Array<{
+        user_id?: string;
+        display_name?: string;
+        typing?: boolean;
+      }>>;
+      const activeTypers = Object.values(presence).flat()
+        .filter((entry) => entry.user_id && entry.user_id !== user.id && entry.typing)
+        .map((entry) => ({
+          user_id: entry.user_id as string,
+          display_name: entry.display_name || "A UEW member",
+        }));
+      setTypingUsers(activeTypers);
+    });
+
+    channel.subscribe((status) => {
+      if (status === "SUBSCRIBED") {
+        void channel.track({ user_id: user.id, display_name: typingDisplayName, typing: false });
+      }
+    });
+
+    return () => {
+      if (typingStopTimer.current) clearTimeout(typingStopTimer.current);
+      typingStopTimer.current = null;
+      typingChannelRef.current = null;
+      setTypingUsers([]);
+      void supabase.removeChannel(channel);
+    };
+  }, [supabase, activeConversationId, user.id, typingDisplayName]);
+
+  function updateTypingPresence(isTyping: boolean) {
+    const channel = typingChannelRef.current;
+    if (!channel) return;
+    if (typingStopTimer.current) clearTimeout(typingStopTimer.current);
+    typingStopTimer.current = null;
+    void channel.track({
+      user_id: user.id,
+      display_name: typingDisplayName,
+      typing: isTyping,
+    });
+    if (isTyping) {
+      typingStopTimer.current = setTimeout(() => {
+        void channel.track({
+          user_id: user.id,
+          display_name: typingDisplayName,
+          typing: false,
+        });
+        typingStopTimer.current = null;
+      }, 1600);
+    }
+  }
+
   const lastOwnMessageId = [...threadMessages].reverse().find((message) => message.sender_id === user.id)?.id ?? null;
   const seenByCount = readMarkers.filter((marker) => {
     const readAt = marker.last_read_at;
@@ -407,6 +477,7 @@ export default function MessagingWorkspace({ supabase, user }: MessagingWorkspac
       });
       if (error) throw error;
       setMessageDraft("");
+      updateTypingPresence(false);
       setSelectedImage(null);
       if (imageInput.current) imageInput.current.value = "";
       await Promise.all([loadThread(activeConversationId), loadConversations()]);
@@ -535,8 +606,11 @@ export default function MessagingWorkspace({ supabase, user }: MessagingWorkspac
               </div>)}
               <div ref={threadEnd} />
             </div>
+            <div className="message-typing-indicator" aria-live="polite" aria-atomic="true">
+              {typingUsers.length > 0 && <><span className="typing-dots"><i /><i /><i /></span><span>{typingUsers.length === 1 ? typingUsers[0].display_name + " is typing…" : typingUsers.length === 2 ? typingUsers[0].display_name + " and " + typingUsers[1].display_name + " are typing…" : typingUsers.length + " people are typing…"}</span></>}
+            </div>
             <form className="message-compose" onSubmit={sendMessage}>
-              <input value={messageDraft} onChange={(event) => setMessageDraft(event.target.value)} maxLength={10000} placeholder="Write a message…" aria-label="Write a message" />
+              <input value={messageDraft} onChange={(event) => { setMessageDraft(event.target.value); updateTypingPresence(Boolean(event.target.value.trim())); }} onBlur={() => updateTypingPresence(false)} maxLength={10000} placeholder="Write a message…" aria-label="Write a message" />
               <input ref={imageInput} className="message-image-input" type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setSelectedImage(event.target.files?.[0] ?? null)} aria-label="Attach an image" />
               <button type="button" className="message-attach-button" onClick={() => imageInput.current?.click()} title="Attach an image">＋ Photo</button>
               <button className="primary-button compact" disabled={messageBusy || (!messageDraft.trim() && !selectedImage)}>{messageBusy ? "Sending…" : "Send"} <span>→</span></button>
