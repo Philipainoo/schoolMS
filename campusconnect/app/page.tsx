@@ -567,6 +567,7 @@ export default function Home() {
                 </article>;
               })}
             </div>
+            </div>
             <div className={activeView === "groups" ? "view-content" : "view-content hidden"}>
               {activeGroup ? (
                 <div className="groups-view">
