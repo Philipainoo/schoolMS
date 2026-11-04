@@ -8,6 +8,8 @@ import type { User } from "@supabase/supabase-js";
 type Profile = { user_id: string; display_name: string; username: string; avatar_path: string | null; bio: string | null; major: string | null; department: string | null; graduation_year: number | null };
 type Post = { id: string; author_id: string; body: string; channel: "campus" | "academic" | "marketplace"; created_at: string; is_pinned: boolean };
 type Comment = { id: string; post_id: string; author_id: string; body: string; created_at: string };
+type CampusGroup = { id: string; institution_id: string; owner_id: string; name: string; description: string | null; category: string | null; visibility: "public" | "private"; created_at: string };
+type GroupPost = { id: string; group_id: string; author_id: string; body: string; created_at: string };
 
 const channels = [
   { id: "campus", label: "Campus life" },
@@ -42,6 +44,16 @@ export default function Home() {
   const [filter, setFilter] = useState<"all" | Post["channel"]>("all");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
+  const [activeView, setActiveView] = useState<"feed" | "groups">("feed");
+  const [groups, setGroups] = useState<CampusGroup[]>([]);
+  const [groupMemberships, setGroupMemberships] = useState<Record<string, string>>({});
+  const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
+  const [groupPosts, setGroupPosts] = useState<GroupPost[]>([]);
+  const [groupPostDraft, setGroupPostDraft] = useState("");
+  const [groupName, setGroupName] = useState("");
+  const [groupDescription, setGroupDescription] = useState("");
+  const [groupCategory, setGroupCategory] = useState("Academic");
+  const [groupBusy, setGroupBusy] = useState(false);
 
   async function loadFeed() {
     if (!supabase) return;
@@ -126,7 +138,10 @@ export default function Home() {
   }, [supabase, user]);
 
   useEffect(() => {
-    if (user && verificationStatus === "verified") void loadFeed();
+    if (user && verificationStatus === "verified") {
+      void loadFeed();
+      void loadGroups();
+    }
   }, [user, verificationStatus]);
 
   async function authenticate(event: FormEvent<HTMLFormElement>) {
@@ -183,6 +198,139 @@ export default function Home() {
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Could not publish your post.");
     } finally { setBusy(false); }
+  }
+
+  async function loadGroups() {
+    if (!supabase || !user) return;
+    const { data, error } = await supabase.from("groups")
+      .select("id,institution_id,owner_id,name,description,category,visibility,created_at")
+      .order("created_at", { ascending: false })
+      .limit(60);
+    if (error) { setNotice(error.message); return; }
+    const rows = (data ?? []) as CampusGroup[];
+    setGroups(rows);
+    const { data: memberships, error: membershipError } = await supabase.from("group_members")
+      .select("group_id,role")
+      .eq("user_id", user.id);
+    if (membershipError) { setNotice(membershipError.message); return; }
+    const map: Record<string, string> = {};
+    (memberships ?? []).forEach((item) => { map[item.group_id] = item.role; });
+    setGroupMemberships(map);
+    const ownerIds = [...new Set(rows.map((group) => group.owner_id))];
+    if (ownerIds.length) {
+      const { data: owners } = await supabase.from("profiles")
+        .select("user_id,display_name,username,avatar_path,bio,major,department,graduation_year")
+        .in("user_id", ownerIds);
+      if (owners) setProfiles((current) => {
+        const next = { ...current };
+        (owners as Profile[]).forEach((person) => { next[person.user_id] = person; });
+        return next;
+      });
+    }
+  }
+
+  async function loadGroupPosts(groupId: string) {
+    if (!supabase) return;
+    const { data, error } = await supabase.from("group_posts")
+      .select("id,group_id,author_id,body,created_at")
+      .eq("group_id", groupId)
+      .order("created_at", { ascending: false })
+      .limit(60);
+    if (error) { setNotice(error.message); return; }
+    const rows = (data ?? []) as GroupPost[];
+    setGroupPosts(rows);
+    const ids = [...new Set(rows.map((post) => post.author_id))];
+    if (ids.length) {
+      const { data: people } = await supabase.from("profiles")
+        .select("user_id,display_name,username,avatar_path,bio,major,department,graduation_year")
+        .in("user_id", ids);
+      if (people) setProfiles((current) => {
+        const next = { ...current };
+        (people as Profile[]).forEach((person) => { next[person.user_id] = person; });
+        return next;
+      });
+    }
+  }
+
+  async function createGroup(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!supabase || !user) return;
+    setGroupBusy(true); setNotice("");
+    try {
+      const { data, error } = await supabase.rpc("create_campus_group", {
+        p_name: groupName.trim(),
+        p_description: groupDescription.trim() || null,
+        p_category: groupCategory,
+        p_visibility: "public",
+      });
+      if (error) throw error;
+      setGroupName(""); setGroupDescription("");
+      await loadGroups();
+      const groupId = data as string;
+      setActiveGroupId(groupId);
+      setActiveView("groups");
+      await loadGroupPosts(groupId);
+      setNotice("Your community has been created.");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Could not create this community.");
+    } finally { setGroupBusy(false); }
+  }
+
+  async function joinGroup(group: CampusGroup) {
+    if (!supabase || !user) return;
+    setGroupBusy(true); setNotice("");
+    try {
+      const { error } = await supabase.from("group_members").insert({
+        institution_id: group.institution_id,
+        group_id: group.id,
+        user_id: user.id,
+        role: "member",
+      });
+      if (error) throw error;
+      await loadGroups();
+      setActiveGroupId(group.id);
+      await loadGroupPosts(group.id);
+      setNotice("You joined the community.");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Could not join this community.");
+    } finally { setGroupBusy(false); }
+  }
+
+  async function leaveGroup(group: CampusGroup) {
+    if (!supabase || !user || group.owner_id === user.id) return;
+    setGroupBusy(true); setNotice("");
+    try {
+      const { error } = await supabase.from("group_members")
+        .delete().eq("group_id", group.id).eq("user_id", user.id);
+      if (error) throw error;
+      setActiveGroupId(null);
+      setGroupPosts([]);
+      await loadGroups();
+      setNotice("You left the community.");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Could not leave this community.");
+    } finally { setGroupBusy(false); }
+  }
+
+  async function publishGroupPost(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!supabase || !user || !activeGroup) return;
+    const body = groupPostDraft.trim();
+    if (!body) return;
+    setGroupBusy(true); setNotice("");
+    try {
+      const { error } = await supabase.from("group_posts").insert({
+        institution_id: activeGroup.institution_id,
+        group_id: activeGroup.id,
+        author_id: user.id,
+        body,
+      });
+      if (error) throw error;
+      setGroupPostDraft("");
+      await loadGroupPosts(activeGroup.id);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Could not publish your group post.");
+    } finally { setGroupBusy(false); }
   }
 
   async function saveProfile(event: FormEvent<HTMLFormElement>) {
@@ -281,6 +429,7 @@ export default function Home() {
     setNotice("You have signed out.");
   }
 
+  const activeGroup = groups.find((group) => group.id === activeGroupId) ?? null;
   const visiblePosts = posts.filter((post) => filter === "all" || post.channel === filter);
   const initials = (name: string) => name.split(" ").map((part) => part[0]).slice(0, 2).join("").toUpperCase();
 
@@ -331,13 +480,14 @@ export default function Home() {
         <div className="app-layout">
           <aside className="sidebar">
             <div className="side-label">YOUR CAMPUS</div>
-            <a className="side-link selected" href="#"><span>⌂</span> Home feed</a>
-            <a className="side-link" href="#groups"><span>◎</span> Communities <em>Soon</em></a>
+            <button className={activeView === "feed" ? "side-link selected" : "side-link"} onClick={() => { setActiveView("feed"); setActiveGroupId(null); }}><span>⌂</span> Home feed</button>
+            <button className={activeView === "groups" ? "side-link selected" : "side-link"} onClick={() => { setActiveView("groups"); setActiveGroupId(null); void loadGroups(); }}><span>◎</span> Communities</button>
             <a className="side-link" href="#messages"><span>✉</span> Messages <em>Soon</em></a>
             <a className="side-link" href="#events"><span>▦</span> Campus events <em>Soon</em></a>
             <div className="sidebar-note"><strong>UEW · Winneba</strong><p>A community built around your campus experience.</p></div>
           </aside>
           <section className="feed-column">
+            <div className={activeView === "feed" ? "view-content" : "view-content hidden"}>
             <section className="profile-summary card">
               <div className="profile-identity">
                 <div className="profile-avatar-wrap">
@@ -384,6 +534,45 @@ export default function Home() {
                   </form>
                 </article>;
               })}
+            </div>
+            <div className={activeView === "groups" ? "view-content" : "view-content hidden"}>
+              {activeGroup ? (
+                <div className="groups-view">
+                  <button className="back-link" onClick={() => { setActiveGroupId(null); setGroupPosts([]); }}>← All communities</button>
+                  <div className="group-detail-card card">
+                    <div className="group-detail-top"><div><div className="eyebrow">{activeGroup.category || "UEW COMMUNITY"}</div><h1>{activeGroup.name}</h1><p>{activeGroup.description || "A place for UEW members to connect and share."}</p></div><span className="group-type-tag">PUBLIC</span></div>
+                    <div className="group-detail-meta"><span>{groupMemberships[activeGroup.id] === "admin" ? "Community owner" : "Member"}</span><button className="profile-edit-button" disabled={groupBusy || activeGroup.owner_id === user.id} onClick={() => leaveGroup(activeGroup)}>{activeGroup.owner_id === user.id ? "You own this group" : "Leave group"}</button></div>
+                  </div>
+                  <form className="group-composer card" onSubmit={publishGroupPost}>
+                    <textarea value={groupPostDraft} onChange={(e) => setGroupPostDraft(e.target.value)} maxLength={10000} placeholder={"Share something with " + activeGroup.name + "…"} aria-label="Write a group post"/>
+                    <div className="group-composer-bottom"><span>Posts are visible to group members only.</span><button className="primary-button compact" disabled={groupBusy || !groupPostDraft.trim()}>{groupBusy ? "Please wait…" : "Share post"} <span>→</span></button></div>
+                  </form>
+                  <div className="group-posts">
+                    {groupPosts.length === 0 ? <div className="empty card"><div className="empty-icon">◎</div><h3>Start the conversation</h3><p>Share the first update with members of this community.</p></div> : groupPosts.map((post) => {
+                      const author = profiles[post.author_id];
+                      return <article className="post card" key={post.id}><div className="post-head">{avatarUrls[post.author_id] ? <img className="avatar avatar-image" src={avatarUrls[post.author_id]} alt=""/> : <div className="avatar">{initials(author?.display_name || "UEW")}</div>}<div className="post-author"><strong>{author?.display_name || "UEW member"}</strong><span>@{author?.username || "campusmember"} · {new Date(post.created_at).toLocaleString()}</span></div></div><p className="post-body">{post.body}</p></article>;
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div className="groups-view">
+                  <div className="feed-heading"><div><div className="eyebrow">FIND YOUR PEOPLE</div><h1>Campus communities</h1><p className="muted">Join conversations and learn with people who share your interests.</p></div><div className="campus-pill"><span/> UEW GROUPS</div></div>
+                  <form className="group-create-card card" onSubmit={createGroup}>
+                    <div className="group-create-heading"><div><strong>Create a community</strong><p>Bring classmates and campus friends together around an interest.</p></div><span>✳</span></div>
+                    <div className="group-create-fields"><label>Community name<input required minLength={3} maxLength={80} value={groupName} onChange={(e) => setGroupName(e.target.value)} placeholder="e.g. UEW Level 200 Study Circle"/></label><label>Category<select value={groupCategory} onChange={(e) => setGroupCategory(e.target.value)}><option>Academic</option><option>Department</option><option>Hall & residence</option><option>Sports</option><option>Arts & culture</option><option>Career & business</option><option>Social</option></select></label></div>
+                    <label className="group-description-label">Description<textarea rows={2} maxLength={500} value={groupDescription} onChange={(e) => setGroupDescription(e.target.value)} placeholder="What is this community about?"/></label>
+                    <div className="group-create-footer"><span>New communities are public to verified UEW members.</span><button className="primary-button compact" disabled={groupBusy || groupName.trim().length < 3}>{groupBusy ? "Creating…" : "Create community"} <span>→</span></button></div>
+                  </form>
+                  <div className="groups-section-heading"><h2>Explore communities</h2><span>{groups.length} found</span></div>
+                  <div className="group-grid">
+                    {groups.length === 0 ? <div className="empty card"><div className="empty-icon">◎</div><h3>No communities yet</h3><p>Create the first UEW community and invite people to join.</p></div> : groups.map((group) => {
+                      const role = groupMemberships[group.id];
+                      const owner = profiles[group.owner_id];
+                      return <article className="group-card card" key={group.id}><div className="group-card-top"><span className="group-icon">◎</span><span className="group-type-tag">{group.visibility === "public" ? "PUBLIC" : "PRIVATE"}</span></div><div className="eyebrow">{group.category || "CAMPUS COMMUNITY"}</div><h3>{group.name}</h3><p>{group.description || "A community for UEW members to connect."}</p><div className="group-card-owner">Created by {owner?.display_name || "UEW member"}</div><div className="group-card-actions">{role ? <><button className="primary-button compact" onClick={() => { setActiveGroupId(group.id); void loadGroupPosts(group.id); }}>Open community →</button>{group.owner_id !== user.id && <button className="profile-edit-button" disabled={groupBusy} onClick={() => leaveGroup(group)}>Leave</button>}</> : group.visibility === "public" ? <button className="primary-button compact" disabled={groupBusy} onClick={() => joinGroup(group)}>Join community <span>→</span></button> : <span className="invite-only">Invite only</span>}</div></article>;
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           </section>
           <aside className="rightbar"><div className="right-card"><div className="eyebrow">CAMPUS SPOTLIGHT</div><h3>Good things happen when we connect.</h3><p>Find a study partner, share an opportunity or help someone settle into campus life.</p></div><div className="right-card soft"><div className="eyebrow">COMING TO CAMPUSCONNECT</div><p>Student groups</p><p>Direct messages</p><p>Campus events</p><p>Profiles and discovery</p></div></aside>
