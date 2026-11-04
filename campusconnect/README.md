@@ -16,7 +16,7 @@ CampusConnect is a university community app for the University of Education, Win
 
 ## Local setup
 
-1. Install Node.js 20 or newer.
+1. Install Node.js 22 or newer.
 2. Open a terminal in `campusconnect/`.
 3. Install dependencies: `npm install`.
 4. Copy `.env.example` to `.env.local`.
