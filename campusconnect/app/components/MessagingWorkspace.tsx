@@ -218,11 +218,12 @@ export default function MessagingWorkspace({ supabase, user }: MessagingWorkspac
 
   const activeConversation = conversations.find((conversation) => conversation.id === activeConversationId) ?? null;
   const lastOwnMessageId = [...threadMessages].reverse().find((message) => message.sender_id === user.id)?.id ?? null;
-  const seenByCount = readMarkers.filter((marker) =>
-    marker.user_id !== user.id &&
-    marker.last_read_at !== null &&
-    threadMessages.some((message) => message.id === lastOwnMessageId && new Date(marker.last_read_at).getTime() >= new Date(message.created_at).getTime())
-  ).length;
+  const seenByCount = readMarkers.filter((marker) => {
+    const readAt = marker.last_read_at;
+    if (marker.user_id === user.id || !readAt || !lastOwnMessageId) return false;
+    const lastOwnMessage = threadMessages.find((message) => message.id === lastOwnMessageId);
+    return Boolean(lastOwnMessage) && new Date(readAt).getTime() >= new Date(lastOwnMessage!.created_at).getTime();
+  }).length;
   const currentGroupRole = activeConversation?.members.find((member) => member.user_id === user.id)?.role ?? null;
   const canManageGroupMembers = activeConversation?.is_group && (currentGroupRole === "owner" || currentGroupRole === "admin");
   const isGroupOwner = currentGroupRole === "owner";
