@@ -6,6 +6,7 @@ import type { User } from "@supabase/supabase-js";
 
 type Profile = { user_id: string; display_name: string; username: string; avatar_path: string | null };
 type Post = { id: string; author_id: string; body: string; channel: "campus" | "academic" | "marketplace"; created_at: string; is_pinned: boolean };
+type Comment = { id: string; post_id: string; author_id: string; body: string; created_at: string };
 
 const channels = [
   { id: "campus", label: "Campus life" },
@@ -20,6 +21,9 @@ export default function Home() {
   const [user, setUser] = useState<User | null>(null);
   const [profiles, setProfiles] = useState<Record<string, Profile>>({});
   const [posts, setPosts] = useState<Post[]>([]);
+  const [comments, setComments] = useState<Record<string, Comment[]>>({});
+  const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
+  const [commentBusy, setCommentBusy] = useState<string | null>(null);
   const [mode, setMode] = useState<"signin" | "signup">("signup");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -42,7 +46,22 @@ export default function Home() {
     if (error) { setNotice(error.message); return; }
     const rows = (data ?? []) as Post[];
     setPosts(rows);
-    const ids = [...new Set(rows.map((post) => post.author_id))];
+    const postIds = rows.map((post) => post.id);
+    let commentRows: Comment[] = [];
+    if (postIds.length) {
+      const { data: commentData, error: commentError } = await supabase.from("comments")
+        .select("id,post_id,author_id,body,created_at")
+        .in("post_id", postIds)
+        .order("created_at", { ascending: true });
+      if (commentError) { setNotice(commentError.message); }
+      commentRows = (commentData ?? []) as Comment[];
+    }
+    const grouped: Record<string, Comment[]> = {};
+    commentRows.forEach((comment) => {
+      grouped[comment.post_id] = [...(grouped[comment.post_id] ?? []), comment];
+    });
+    setComments(grouped);
+    const ids = [...new Set([...rows.map((post) => post.author_id), ...commentRows.map((comment) => comment.author_id)])];
     if (ids.length) {
       const { data: people } = await supabase.from("profiles")
         .select("user_id,display_name,username,avatar_path")
@@ -122,6 +141,30 @@ export default function Home() {
     } finally { setBusy(false); }
   }
 
+  async function publishComment(event: FormEvent<HTMLFormElement>, postId: string) {
+    event.preventDefault();
+    if (!supabase || !user) return;
+    const body = (commentDrafts[postId] ?? "").trim();
+    if (!body) return;
+    setCommentBusy(postId); setNotice("");
+    try {
+      const { data: institution, error: institutionError } = await supabase
+        .from("institutions").select("id").eq("slug", "uew").single();
+      if (institutionError || !institution) throw new Error("UEW campus could not be found.");
+      const { error } = await supabase.from("comments").insert({
+        institution_id: institution.id,
+        post_id: postId,
+        author_id: user.id,
+        body,
+      });
+      if (error) throw error;
+      setCommentDrafts((current) => ({ ...current, [postId]: "" }));
+      await loadFeed();
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Could not add your comment.");
+    } finally { setCommentBusy(null); }
+  }
+
   async function signOut() {
     if (!supabase) return;
     await supabase.auth.signOut();
@@ -185,7 +228,20 @@ export default function Home() {
               {visiblePosts.length === 0 ? <div className="empty card"><div className="empty-icon">✳</div><h3>Your campus story starts here</h3><p>There are no posts in this feed yet. Be the first to share something with UEW.</p></div> : visiblePosts.map((post) => {
                 const person = profiles[post.author_id];
                 const name = person?.display_name || "UEW student";
-                return <article className="post card" key={post.id}><div className="post-head"><div className="avatar">{initials(name)}</div><div className="post-author"><strong>{name}</strong><span>@{person?.username || "campusmember"} · {new Date(post.created_at).toLocaleString()}</span></div><span className="channel-tag">{channels.find((item) => item.id === post.channel)?.label}</span></div><p className="post-body">{post.body}</p></article>;
+                return <article className="post card" key={post.id}>
+                  <div className="post-head"><div className="avatar">{initials(name)}</div><div className="post-author"><strong>{name}</strong><span>@{person?.username || "campusmember"} · {new Date(post.created_at).toLocaleString()}</span></div><span className="channel-tag">{channels.find((item) => item.id === post.channel)?.label}</span></div>
+                  <p className="post-body">{post.body}</p>
+                  <div className="comment-list">
+                    {(comments[post.id] ?? []).map((comment) => {
+                      const commenter = profiles[comment.author_id];
+                      return <div className="comment" key={comment.id}><div className="comment-avatar">{initials(commenter?.display_name || "UEW")}</div><div><strong>{commenter?.display_name || "UEW student"}</strong><p>{comment.body}</p><time>{new Date(comment.created_at).toLocaleString()}</time></div></div>;
+                    })}
+                  </div>
+                  <form className="comment-form" onSubmit={(event) => publishComment(event, post.id)}>
+                    <input aria-label="Write a comment" maxLength={5000} placeholder="Write a comment…" value={commentDrafts[post.id] ?? ""} onChange={(event) => setCommentDrafts((current) => ({ ...current, [post.id]: event.target.value }))}/>
+                    <button type="submit" disabled={commentBusy === post.id || !(commentDrafts[post.id] ?? "").trim()}>{commentBusy === post.id ? "…" : "Reply"}</button>
+                  </form>
+                </article>;
               })}
             </div>
           </section>
