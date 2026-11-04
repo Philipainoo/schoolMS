@@ -81,6 +81,7 @@ export default function Home() {
   const [myGroupInvites, setMyGroupInvites] = useState<GroupInvite[]>([]);
   const [notifications, setNotifications] = useState<CampusNotification[]>([]);
   const [notificationOpen, setNotificationOpen] = useState(false);
+  const [realtimeStatus, setRealtimeStatus] = useState<"connecting" | "connected" | "offline">("connecting");
 
   async function loadFeed() {
     if (!supabase) return;
@@ -314,6 +315,46 @@ export default function Home() {
       .subscribe();
     return () => { void supabase.removeChannel(channel); };
   }, [supabase, user, verificationStatus]);
+
+  useEffect(() => {
+    if (!supabase || !user || verificationStatus !== "verified") {
+      setRealtimeStatus("offline");
+      return;
+    }
+    setRealtimeStatus("connecting");
+    let mounted = true;
+    const groupId = activeGroupId;
+    let channel = supabase.channel("campusconnect-feed-groups-" + user.id);
+    channel = channel
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "posts" }, () => {
+        void loadFeed();
+      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "posts" }, () => {
+        void loadFeed();
+      })
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "comments" }, () => {
+        void loadFeed();
+      });
+    if (groupId) {
+      channel = channel.on("postgres_changes", {
+        event: "INSERT",
+        schema: "public",
+        table: "group_posts",
+        filter: "group_id=eq." + groupId,
+      }, () => {
+        void loadGroupPosts(groupId);
+      });
+    }
+    channel = channel.subscribe((status) => {
+      if (!mounted) return;
+      if (status === "SUBSCRIBED") setRealtimeStatus("connected");
+      else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") setRealtimeStatus("offline");
+    });
+    return () => {
+      mounted = false;
+      void supabase.removeChannel(channel);
+    };
+  }, [supabase, user, verificationStatus, activeGroupId]);
 
   async function authenticate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -930,7 +971,7 @@ export default function Home() {
                 <div className="profile-editor-actions"><span>Keep personal details you don&apos;t want public out of your bio.</span><button className="primary-button compact" disabled={profileSaving}>{profileSaving ? "Saving…" : "Save profile"}</button></div>
               </form>}
             </section>
-            <div className="feed-heading"><div><div className="eyebrow">MONDAY TO SUNDAY, TOGETHER</div><h1>Your campus feed</h1><p className="muted">What’s happening around UEW?</p></div><div className="campus-pill"><span/> UEW COMMUNITY</div></div>
+            <div className="feed-heading"><div><div className="eyebrow">MONDAY TO SUNDAY, TOGETHER</div><h1>Your campus feed</h1><p className="muted">What’s happening around UEW?</p></div><div className="campus-pill"><span/> {realtimeStatus === "connected" ? "LIVE UPDATES" : realtimeStatus === "connecting" ? "CONNECTING…" : "LIVE UPDATES OFFLINE"}</div></div>
             <form className="composer card" onSubmit={publish}>
               <div className="composer-top"><div className="avatar">{initials(user.email?.split("@")[0] || "U")}</div><textarea value={draft} onChange={(e) => setDraft(e.target.value)} maxLength={10000} placeholder="Share something with your campus…" aria-label="Write a campus post"/></div>
               <div className="composer-bottom"><select value={channel} onChange={(e) => setChannel(e.target.value as Post["channel"])} aria-label="Choose post channel">{channels.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select><button className="primary-button compact" disabled={busy || !draft.trim()}>Post <span>→</span></button></div>
@@ -1023,7 +1064,7 @@ export default function Home() {
                   {(activeGroup.owner_id === user.id || groupMemberships[activeGroup.id] === "admin") && <section className="group-members-card card"><div className="groups-section-heading"><h2>Members & moderators</h2><span>{groupMembers.length} members</span></div><div className="group-member-list">{groupMembers.map((member) => { const person = profiles[member.user_id]; return <div className="group-member-row" key={member.user_id}><div><strong>{person?.display_name || "UEW member"}</strong><span>@{person?.username || "campusmember"} · {member.role}</span></div>{activeGroup.owner_id === user.id && member.user_id !== user.id && <select aria-label={"Role for " + (person?.username || "member")} value={member.role === "moderator" ? "moderator" : "member"} disabled={groupBusy} onChange={(e) => void updateGroupMemberRole(member, e.target.value as "member" | "moderator")}><option value="member">Member</option><option value="moderator">Moderator</option></select>}</div>; })}</div></section>}
                   <form className="group-composer card" onSubmit={publishGroupPost}>
                     <textarea value={groupPostDraft} onChange={(e) => setGroupPostDraft(e.target.value)} maxLength={10000} placeholder={"Share something with " + activeGroup.name + "…"} aria-label="Write a group post"/>
-                    <div className="group-composer-bottom"><span>Posts are visible to group members only.</span><button className="primary-button compact" disabled={groupBusy || !groupPostDraft.trim()}>{groupBusy ? "Please wait…" : "Share post"} <span>→</span></button></div>
+                    <div className="group-composer-bottom"><span>Members only · {realtimeStatus === "connected" ? "Live updates on" : realtimeStatus === "connecting" ? "Connecting…" : "Live updates offline"}</span><button className="primary-button compact" disabled={groupBusy || !groupPostDraft.trim()}>{groupBusy ? "Please wait…" : "Share post"} <span>→</span></button></div>
                   </form>
                   <div className="group-posts">
                     {groupPosts.length === 0 ? <div className="empty card"><div className="empty-icon">◎</div><h3>Start the conversation</h3><p>Share the first update with members of this community.</p></div> : groupPosts.map((post) => {
