@@ -153,3 +153,14 @@
 .group-settings-panel>div:first-child span{font-size:9px;color:var(--muted)}
 .group-rename-form{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .group-rename-form input{flex:1;min-width:160px;border:1px solid #cbdccc;border-radius:8px;padding:9px;font:inherit;font-size:10px;background:#fff;color:var(--ink)}
+
+
+/* Group profile descriptions and private group avatars */
+.group-profile-form{display:grid;gap:10px;padding:11px;border:1px solid #e1eae2;border-radius:10px;background:#fff}
+.group-profile-form label{display:grid;gap:6px;font-size:9px;font-weight:800;color:#526158}
+.group-profile-form textarea,.group-profile-form input[type=file]{width:100%;min-width:0;border:1px solid #d5e1d6;border-radius:8px;padding:9px;background:#fff;color:var(--ink);font:inherit;font-size:10px}
+.group-profile-form textarea{resize:vertical;line-height:1.5}
+.group-profile-form small{font-size:8px;font-weight:500;color:var(--muted)}
+.group-avatar-selected{font-size:9px;color:#4f7658}
+.group-profile-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.conversation-avatar img{width:100%;height:100%;display:block;object-fit:cover;border-radius:inherit}
