@@ -6,8 +6,8 @@ alter table public.messages add column if not exists edited_at timestamptz, add 
 create or replace function private.enforce_message_author_edits() returns trigger language plpgsql set search_path = '' as $$
 begin
   if old.deleted_at is not null then raise exception 'Deleted messages cannot be changed.'; end if;
-  if new.id is distinct from old.id or new.institution_id is distinct from old.institution_id or new.conversation_id is distinct from old.conversation_id or new.sender_id is distinct from old.sender_id or new.created_at is distinct from old.created_at or new.attachment_paths is distinct from old.attachment_paths then
-    raise exception 'Message ownership, conversation and attachments cannot be changed directly.';
+  if new.id is distinct from old.id or new.institution_id is distinct from old.institution_id or new.conversation_id is distinct from old.conversation_id or new.sender_id is distinct from old.sender_id or new.created_at is distinct from old.created_at then
+    raise exception 'Message ownership and conversation cannot be changed.';
   end if;
   if new.deleted_at is not null then
     new.deleted_at := clock_timestamp(); new.body := 'This message was deleted'; new.attachment_paths := '{}'::text[]; new.edited_at := old.edited_at;
