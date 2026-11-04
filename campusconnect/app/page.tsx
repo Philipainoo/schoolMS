@@ -76,13 +76,15 @@ export default function Home() {
         .in("user_id", ids);
       const index: Record<string, Profile> = {};
       const signed: Record<string, string> = {};
-      for (const person of (people ?? []) as Profile[]) {
-        index[person.user_id] = person;
-        if (person.avatar_path) {
-          const { data: signedUrl } = await supabase.storage.from("campus-avatars").createSignedUrl(person.avatar_path, 3600);
-          if (signedUrl?.signedUrl) signed[person.user_id] = signedUrl.signedUrl;
-        }
-      }
+      const peopleRows = (people ?? []) as Profile[];
+      peopleRows.forEach((person) => { index[person.user_id] = person; });
+      const signedResults = await Promise.all(peopleRows.filter((person) => person.avatar_path).map(async (person) => {
+        const { data: signedUrl } = await supabase.storage.from("campus-avatars").createSignedUrl(person.avatar_path as string, 3600);
+        return signedUrl?.signedUrl ? [person.user_id, signedUrl.signedUrl] as const : null;
+      }));
+      signedResults.forEach((result) => {
+        if (result) signed[result[0]] = result[1];
+      });
       setProfiles(index);
       setAvatarUrls(signed);
       if (user && index[user.id]) {
