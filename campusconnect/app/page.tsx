@@ -14,6 +14,8 @@ type GroupMember = { user_id: string; role: "member" | "moderator" | "admin" };
 type GroupInvite = { id: string; group_id: string; invited_by: string; invited_at: string; group_name?: string };
 type DirectMessage = { id: string; conversation_id: string; sender_id: string; body: string; created_at: string };
 type ConversationSummary = { id: string; created_at: string; peer: Profile | null; lastMessage: DirectMessage | null };
+type CampusEvent = { id: string; title: string; description: string | null; starts_at: string; ends_at: string | null; location: string; organizer_id: string };
+type CampusAnnouncement = { id: string; title: string; content: string; priority: "normal" | "high"; published_at: string; author_id: string };
 
 const channels = [
   { id: "campus", label: "Campus life" },
@@ -27,6 +29,12 @@ export default function Home() {
   }, []);
   const [user, setUser] = useState<User | null>(null);
   const [verificationStatus, setVerificationStatus] = useState<"pending" | "verified" | "suspended" | "error" | null>(null);
+  const [accountRole, setAccountRole] = useState<"student" | "faculty" | null>(null);
+  const [campusEvents, setCampusEvents] = useState<CampusEvent[]>([]);
+  const [announcements, setAnnouncements] = useState<CampusAnnouncement[]>([]);
+  const [eventForm, setEventForm] = useState({ title: "", description: "", starts_at: "", ends_at: "", location: "" });
+  const [announcementForm, setAnnouncementForm] = useState({ title: "", content: "", priority: "normal" as "normal" | "high" });
+  const [boardBusy, setBoardBusy] = useState(false);
   const [profiles, setProfiles] = useState<Record<string, Profile>>({});
   const [avatarUrls, setAvatarUrls] = useState<Record<string, string>>({});
   const [myProfile, setMyProfile] = useState<Profile | null>(null);
@@ -48,7 +56,7 @@ export default function Home() {
   const [filter, setFilter] = useState<"all" | Post["channel"]>("all");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
-  const [activeView, setActiveView] = useState<"feed" | "groups" | "messages">("feed");
+  const [activeView, setActiveView] = useState<"feed" | "groups" | "messages" | "events">("feed");
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [threadMessages, setThreadMessages] = useState<DirectMessage[]>([]);
@@ -144,10 +152,11 @@ export default function Home() {
     async function checkVerification() {
       if (!supabase || !user) { setVerificationStatus(null); return; }
       setVerificationStatus(null);
-      const { data, error } = await supabase.from("users").select("verification_status").eq("id", user.id).single();
+      const { data, error } = await supabase.from("users").select("verification_status,role").eq("id", user.id).single();
       if (!active) return;
       if (error) { setNotice("We couldn't check your campus verification status. Please try again."); setVerificationStatus("error"); return; }
       setVerificationStatus(data.verification_status as "pending" | "verified" | "suspended");
+      setAccountRole(data.role as "student" | "faculty");
     }
     void checkVerification();
     return () => { active = false; };
@@ -157,6 +166,7 @@ export default function Home() {
     if (user && verificationStatus === "verified") {
       void loadFeed();
       void loadGroups();
+      void loadCampusBoard();
     }
   }, [user, verificationStatus]);
 
@@ -342,6 +352,53 @@ export default function Home() {
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Could not publish your post.");
     } finally { setBusy(false); }
+  }
+
+  async function loadCampusBoard() {
+    if (!supabase || !user) return;
+    const [{ data: eventRows, error: eventError }, { data: announcementRows, error: announcementError }] = await Promise.all([
+      supabase.from("campus_events").select("id,title,description,starts_at,ends_at,location,organizer_id").order("starts_at", { ascending: true }).limit(50),
+      supabase.from("announcements").select("id,title,content,priority,published_at,author_id").order("published_at", { ascending: false }).limit(30),
+    ]);
+    if (eventError) setNotice(eventError.message); else setCampusEvents((eventRows ?? []) as CampusEvent[]);
+    if (announcementError) setNotice(announcementError.message); else setAnnouncements((announcementRows ?? []) as CampusAnnouncement[]);
+  }
+
+  async function createCampusEvent(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!supabase || !user || accountRole !== "faculty") return;
+    setBoardBusy(true); setNotice("");
+    try {
+      const { data: institution, error: institutionError } = await supabase.from("institutions").select("id").eq("slug", "uew").single();
+      if (institutionError || !institution) throw new Error("UEW campus could not be found.");
+      const { error } = await supabase.from("campus_events").insert({
+        institution_id: institution.id, organizer_id: user.id, title: eventForm.title.trim(),
+        description: eventForm.description.trim() || null, starts_at: new Date(eventForm.starts_at).toISOString(),
+        ends_at: eventForm.ends_at ? new Date(eventForm.ends_at).toISOString() : null, location: eventForm.location.trim(),
+      });
+      if (error) throw error;
+      setEventForm({ title: "", description: "", starts_at: "", ends_at: "", location: "" });
+      setNotice("Campus event published."); await loadCampusBoard();
+    } catch (error) { setNotice(error instanceof Error ? error.message : "Could not publish this event."); }
+    finally { setBoardBusy(false); }
+  }
+
+  async function createAnnouncement(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!supabase || !user || accountRole !== "faculty") return;
+    setBoardBusy(true); setNotice("");
+    try {
+      const { data: institution, error: institutionError } = await supabase.from("institutions").select("id").eq("slug", "uew").single();
+      if (institutionError || !institution) throw new Error("UEW campus could not be found.");
+      const { error } = await supabase.from("announcements").insert({
+        institution_id: institution.id, author_id: user.id, title: announcementForm.title.trim(),
+        content: announcementForm.content.trim(), priority: announcementForm.priority,
+      });
+      if (error) throw error;
+      setAnnouncementForm({ title: "", content: "", priority: "normal" });
+      setNotice("Campus announcement published."); await loadCampusBoard();
+    } catch (error) { setNotice(error instanceof Error ? error.message : "Could not publish this announcement."); }
+    finally { setBoardBusy(false); }
   }
 
   async function loadGroups() {
@@ -768,7 +825,7 @@ export default function Home() {
             <button className={activeView === "feed" ? "side-link selected" : "side-link"} onClick={() => { setActiveView("feed"); setActiveGroupId(null); }}><span>⌂</span> Home feed</button>
             <button className={activeView === "groups" ? "side-link selected" : "side-link"} onClick={() => { setActiveView("groups"); setActiveGroupId(null); void loadGroups(); }}><span>◎</span> Communities</button>
             <button className={activeView === "messages" ? "side-link selected" : "side-link"} onClick={() => { setActiveView("messages"); setActiveGroupId(null); void loadConversations(); }}><span>✉</span> Messages</button>
-            <a className="side-link" href="#events"><span>▦</span> Campus events <em>Soon</em></a>
+            <button className={activeView === "events" ? "side-link selected" : "side-link"} onClick={() => { setActiveView("events"); setActiveGroupId(null); void loadCampusBoard(); }}><span>▦</span> Events & notices</button>
             <div className="sidebar-note"><strong>UEW · Winneba</strong><p>A community built around your campus experience.</p></div>
           </aside>
           <section className="feed-column">
@@ -846,6 +903,35 @@ export default function Home() {
                 </div>
               </div>
             </div>
+            <div className={activeView === "events" ? "view-content" : "view-content hidden"}>
+              <div className="campus-board-view">
+                <div className="feed-heading"><div><div className="eyebrow">WHAT’S HAPPENING AT UEW</div><h1>Events & announcements</h1><p className="muted">Stay up to date with campus activities and official notices.</p></div><div className="campus-pill"><span/> UEW CAMPUS</div></div>
+                {accountRole === "faculty" && <div className="board-create-grid">
+                  <form className="board-form card" onSubmit={createCampusEvent}>
+                    <div className="group-create-heading"><div><strong>Publish a campus event</strong><p>Share a lecture, programme, meeting or campus activity.</p></div><span>▦</span></div>
+                    <label>Event title<input required minLength={2} maxLength={200} value={eventForm.title} onChange={(e) => setEventForm((v) => ({ ...v, title: e.target.value }))} placeholder="e.g. UEW Career Fair"/></label>
+                    <label>Description<textarea rows={3} maxLength={5000} value={eventForm.description} onChange={(e) => setEventForm((v) => ({ ...v, description: e.target.value }))} placeholder="What should attendees know?"/></label>
+                    <div className="board-form-row"><label>Starts<input type="datetime-local" required value={eventForm.starts_at} onChange={(e) => setEventForm((v) => ({ ...v, starts_at: e.target.value }))}/></label><label>Ends (optional)<input type="datetime-local" value={eventForm.ends_at} onChange={(e) => setEventForm((v) => ({ ...v, ends_at: e.target.value }))}/></label></div>
+                    <label>Location<input required maxLength={300} value={eventForm.location} onChange={(e) => setEventForm((v) => ({ ...v, location: e.target.value }))} placeholder="e.g. Jophus Anamuah-Mensah Conference Centre"/></label>
+                    <button className="primary-button compact" disabled={boardBusy || !eventForm.title.trim() || !eventForm.starts_at || !eventForm.location.trim()}>{boardBusy ? "Publishing…" : "Publish event"} <span>→</span></button>
+                  </form>
+                  <form className="board-form card" onSubmit={createAnnouncement}>
+                    <div className="group-create-heading"><div><strong>Publish an announcement</strong><p>Post an official update for verified UEW members.</p></div><span>✳</span></div>
+                    <label>Announcement title<input required minLength={2} maxLength={200} value={announcementForm.title} onChange={(e) => setAnnouncementForm((v) => ({ ...v, title: e.target.value }))} placeholder="e.g. Registration deadline"/></label>
+                    <label>Notice<textarea required rows={6} maxLength={20000} value={announcementForm.content} onChange={(e) => setAnnouncementForm((v) => ({ ...v, content: e.target.value }))} placeholder="Write the official notice…"/></label>
+                    <label>Priority<select value={announcementForm.priority} onChange={(e) => setAnnouncementForm((v) => ({ ...v, priority: e.target.value as "normal" | "high" }))}><option value="normal">Normal</option><option value="high">Important</option></select></label>
+                    <button className="primary-button compact" disabled={boardBusy || !announcementForm.title.trim() || !announcementForm.content.trim()}>{boardBusy ? "Publishing…" : "Publish announcement"} <span>→</span></button>
+                  </form>
+                </div>}
+                <section className="board-section"><div className="groups-section-heading"><h2>Campus announcements</h2><span>{announcements.length} notices</span></div>
+                  {announcements.length === 0 ? <div className="empty card"><div className="empty-icon">✳</div><h3>No announcements yet</h3><p>Official campus notices will appear here.</p></div> : announcements.map((item) => <article className={item.priority === "high" ? "announcement-card card important" : "announcement-card card"} key={item.id}><div className="announcement-top"><span className={item.priority === "high" ? "announcement-priority high" : "announcement-priority"}>{item.priority === "high" ? "IMPORTANT" : "CAMPUS NOTICE"}</span><time>{new Date(item.published_at).toLocaleString()}</time></div><h3>{item.title}</h3><p>{item.content}</p></article>)}
+                </section>
+                <section className="board-section"><div className="groups-section-heading"><h2>Upcoming campus events</h2><span>{campusEvents.length} events</span></div>
+                  {campusEvents.length === 0 ? <div className="empty card"><div className="empty-icon">▦</div><h3>No upcoming events listed</h3><p>Check back for lectures, programmes and activities around UEW.</p></div> : <div className="event-list">{campusEvents.map((item) => <article className="event-card card" key={item.id}><div className="event-date"><strong>{new Date(item.starts_at).toLocaleDateString("en-GH", { day: "2-digit" })}</strong><span>{new Date(item.starts_at).toLocaleDateString("en-GH", { month: "short" })}</span></div><div className="event-copy"><h3>{item.title}</h3><p>{item.description || "A campus event for the UEW community."}</p><div className="event-meta"><span>◷ {new Date(item.starts_at).toLocaleString("en-GH", { dateStyle: "medium", timeStyle: "short", timeZone: "Africa/Accra" })}</span><span>⌖ {item.location}</span></div>{item.ends_at && <small>Ends {new Date(item.ends_at).toLocaleString("en-GH", { dateStyle: "medium", timeStyle: "short", timeZone: "Africa/Accra" })}</small>}</div></article>)}</div>}
+                </section>
+                {accountRole !== "faculty" && <p className="board-readonly-note">Only verified UEW faculty accounts can publish official events and announcements. Contact your campus administrator if you need publishing access.</p>}
+              </div>
+            </div>
             <div className={activeView === "groups" ? "view-content" : "view-content hidden"}>
               {activeGroup ? (
                 <div className="groups-view">
@@ -889,7 +975,7 @@ export default function Home() {
               )}
             </div>
           </section>
-          <aside className="rightbar"><div className="right-card"><div className="eyebrow">CAMPUS SPOTLIGHT</div><h3>Good things happen when we connect.</h3><p>Find a study partner, share an opportunity or help someone settle into campus life.</p></div><div className="right-card soft"><div className="eyebrow">COMING TO CAMPUSCONNECT</div><p>Private-group invitations</p><p>Private direct messages</p><p>Campus events</p><p>Member notifications</p></div></aside>
+          <aside className="rightbar"><div className="right-card"><div className="eyebrow">CAMPUS SPOTLIGHT</div><h3>Good things happen when we connect.</h3><p>Find a study partner, share an opportunity or help someone settle into campus life.</p></div><div className="right-card soft"><div className="eyebrow">COMING TO CAMPUSCONNECT</div><p>Private-group invitations</p><p>Private direct messages</p><p>Campus events & announcements</p><p>Member notifications</p></div></aside>
           {notice && <div className="toast" role="status">{notice}</div>}
         </div>
       )}
