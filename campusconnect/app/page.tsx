@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { getSupabase } from "@/lib/supabase";
 import type { User } from "@supabase/supabase-js";
 
-type Profile = { user_id: string; display_name: string; username: string; avatar_path: string | null };
+type Profile = { user_id: string; display_name: string; username: string; avatar_path: string | null; bio: string | null; major: string | null; department: string | null; graduation_year: number | null };
 type Post = { id: string; author_id: string; body: string; channel: "campus" | "academic" | "marketplace"; created_at: string; is_pinned: boolean };
 type Comment = { id: string; post_id: string; author_id: string; body: string; created_at: string };
 
@@ -20,6 +20,12 @@ export default function Home() {
   }, []);
   const [user, setUser] = useState<User | null>(null);
   const [profiles, setProfiles] = useState<Record<string, Profile>>({});
+  const [avatarUrls, setAvatarUrls] = useState<Record<string, string>>({});
+  const [myProfile, setMyProfile] = useState<Profile | null>(null);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [avatarBusy, setAvatarBusy] = useState(false);
+  const [profileForm, setProfileForm] = useState({ display_name: "", username: "", bio: "", major: "", department: "", graduation_year: "" });
   const [posts, setPosts] = useState<Post[]>([]);
   const [comments, setComments] = useState<Record<string, Comment[]>>({});
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
@@ -61,14 +67,33 @@ export default function Home() {
       grouped[comment.post_id] = [...(grouped[comment.post_id] ?? []), comment];
     });
     setComments(grouped);
-    const ids = [...new Set([...rows.map((post) => post.author_id), ...commentRows.map((comment) => comment.author_id)])];
+    const ids = [...new Set([...rows.map((post) => post.author_id), ...commentRows.map((comment) => comment.author_id), ...(user ? [user.id] : [])])];
     if (ids.length) {
       const { data: people } = await supabase.from("profiles")
-        .select("user_id,display_name,username,avatar_path")
+        .select("user_id,display_name,username,avatar_path,bio,major,department,graduation_year")
         .in("user_id", ids);
       const index: Record<string, Profile> = {};
-      (people ?? []).forEach((person) => { index[person.user_id] = person as Profile; });
+      const signed: Record<string, string> = {};
+      for (const person of (people ?? []) as Profile[]) {
+        index[person.user_id] = person;
+        if (person.avatar_path) {
+          const { data: signedUrl } = await supabase.storage.from("campus-avatars").createSignedUrl(person.avatar_path, 3600);
+          if (signedUrl?.signedUrl) signed[person.user_id] = signedUrl.signedUrl;
+        }
+      }
       setProfiles(index);
+      setAvatarUrls(signed);
+      if (user && index[user.id]) {
+        setMyProfile(index[user.id]);
+        setProfileForm({
+          display_name: index[user.id].display_name ?? "",
+          username: index[user.id].username ?? "",
+          bio: index[user.id].bio ?? "",
+          major: index[user.id].major ?? "",
+          department: index[user.id].department ?? "",
+          graduation_year: index[user.id].graduation_year?.toString() ?? "",
+        });
+      }
     }
   }
 
@@ -139,6 +164,71 @@ export default function Home() {
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Could not publish your post.");
     } finally { setBusy(false); }
+  }
+
+  async function saveProfile(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!supabase || !user) return;
+    setProfileSaving(true); setNotice("");
+    try {
+      const year = profileForm.graduation_year.trim() ? Number(profileForm.graduation_year) : null;
+      if (year !== null && (!Number.isInteger(year) || year < 1950 || year > 2150)) {
+        throw new Error("Enter a valid graduation year between 1950 and 2150.");
+      }
+      const { data, error } = await supabase.from("profiles").update({
+        display_name: profileForm.display_name.trim(),
+        username: profileForm.username.trim().toLowerCase(),
+        bio: profileForm.bio.trim() || null,
+        major: profileForm.major.trim() || null,
+        department: profileForm.department.trim() || null,
+        graduation_year: year,
+      }).eq("user_id", user.id).select("user_id,display_name,username,avatar_path,bio,major,department,graduation_year").single();
+      if (error) throw error;
+      setMyProfile(data as Profile);
+      setProfiles((current) => ({ ...current, [user.id]: data as Profile }));
+      setProfileOpen(false);
+      setNotice("Your profile has been updated.");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Could not save your profile.");
+    } finally { setProfileSaving(false); }
+  }
+
+  async function uploadAvatar(event: React.ChangeEvent<HTMLInputElement>) {
+    if (!supabase || !user) return;
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      setNotice("Choose a JPG, PNG or WebP image."); return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      setNotice("Your profile photo must be 2 MB or smaller."); return;
+    }
+    setAvatarBusy(true); setNotice("");
+    try {
+      const extension = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";
+      const path = user.id + "/" + Date.now() + "." + extension;
+      const { error: uploadError } = await supabase.storage.from("campus-avatars").upload(path, file, {
+        contentType: file.type,
+        cacheControl: "3600",
+        upsert: false,
+      });
+      if (uploadError) throw uploadError;
+      const { data, error } = await supabase.from("profiles").update({ avatar_path: path })
+        .eq("user_id", user.id)
+        .select("user_id,display_name,username,avatar_path,bio,major,department,graduation_year")
+        .single();
+      if (error) throw error;
+      const { data: signed, error: signedError } = await supabase.storage.from("campus-avatars").createSignedUrl(path, 3600);
+      if (signedError) throw signedError;
+      const updated = data as Profile;
+      setMyProfile(updated);
+      setProfiles((current) => ({ ...current, [user.id]: updated }));
+      if (signed?.signedUrl) setAvatarUrls((current) => ({ ...current, [user.id]: signed.signedUrl }));
+      setNotice("Your profile photo has been updated.");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Could not upload your profile photo.");
+    } finally { setAvatarBusy(false); }
   }
 
   async function publishComment(event: FormEvent<HTMLFormElement>, postId: string) {
@@ -218,6 +308,27 @@ export default function Home() {
             <div className="sidebar-note"><strong>UEW · Winneba</strong><p>A community built around your campus experience.</p></div>
           </aside>
           <section className="feed-column">
+            <section className="profile-summary card">
+              <div className="profile-identity">
+                <div className="profile-avatar-wrap">
+                  {avatarUrls[user.id] ? <img className="profile-avatar" src={avatarUrls[user.id]} alt="Your profile"/> : <div className="profile-avatar profile-avatar-fallback">{initials(myProfile?.display_name || user.email?.split("@")[0] || "U")}</div>}
+                  <label className="avatar-change" title="Change profile photo">✎<input type="file" accept="image/png,image/jpeg,image/webp" onChange={uploadAvatar} disabled={avatarBusy}/></label>
+                </div>
+                <div className="profile-summary-text"><strong>{myProfile?.display_name || "Your profile"}</strong><span>@{myProfile?.username || "set-a-username"}</span><p>{myProfile?.bio || "Add a short bio so campus members can get to know you."}</p></div>
+              </div>
+              <div className="profile-actions"><button className="profile-edit-button" onClick={() => setProfileOpen((open) => !open)}>{profileOpen ? "Close editor" : "Edit profile"}</button><small>{avatarBusy ? "Uploading photo…" : "JPG, PNG or WebP · Max 2 MB"}</small></div>
+              {profileOpen && <form className="profile-editor" onSubmit={saveProfile}>
+                <div className="profile-form-grid">
+                  <label>Full name<input required maxLength={120} value={profileForm.display_name} onChange={(e) => setProfileForm((v) => ({...v,display_name:e.target.value}))}/></label>
+                  <label>Username<input required minLength={3} maxLength={30} pattern="[A-Za-z0-9_]+" value={profileForm.username} onChange={(e) => setProfileForm((v) => ({...v,username:e.target.value}))}/></label>
+                  <label>Programme / major<input maxLength={120} value={profileForm.major} onChange={(e) => setProfileForm((v) => ({...v,major:e.target.value}))} placeholder="e.g. B.Ed. Basic Education"/></label>
+                  <label>Department<input maxLength={120} value={profileForm.department} onChange={(e) => setProfileForm((v) => ({...v,department:e.target.value}))} placeholder="Your department"/></label>
+                  <label>Graduation year<input type="number" min="1950" max="2150" value={profileForm.graduation_year} onChange={(e) => setProfileForm((v) => ({...v,graduation_year:e.target.value}))} placeholder="e.g. 2028"/></label>
+                </div>
+                <label className="profile-bio-label">Bio<textarea maxLength={500} rows={3} value={profileForm.bio} onChange={(e) => setProfileForm((v) => ({...v,bio:e.target.value}))} placeholder="A little about you…"/></label>
+                <div className="profile-editor-actions"><span>Keep personal details you don't want public out of your bio.</span><button className="primary-button compact" disabled={profileSaving}>{profileSaving ? "Saving…" : "Save profile"}</button></div>
+              </form>}
+            </section>
             <div className="feed-heading"><div><div className="eyebrow">MONDAY TO SUNDAY, TOGETHER</div><h1>Your campus feed</h1><p className="muted">What’s happening around UEW?</p></div><div className="campus-pill"><span/> UEW COMMUNITY</div></div>
             <form className="composer card" onSubmit={publish}>
               <div className="composer-top"><div className="avatar">{initials(user.email?.split("@")[0] || "U")}</div><textarea value={draft} onChange={(e) => setDraft(e.target.value)} maxLength={10000} placeholder="Share something with your campus…" aria-label="Write a campus post"/></div>
@@ -229,12 +340,12 @@ export default function Home() {
                 const person = profiles[post.author_id];
                 const name = person?.display_name || "UEW student";
                 return <article className="post card" key={post.id}>
-                  <div className="post-head"><div className="avatar">{initials(name)}</div><div className="post-author"><strong>{name}</strong><span>@{person?.username || "campusmember"} · {new Date(post.created_at).toLocaleString()}</span></div><span className="channel-tag">{channels.find((item) => item.id === post.channel)?.label}</span></div>
+                  <div className="post-head">{avatarUrls[post.author_id] ? <img className="avatar avatar-image" src={avatarUrls[post.author_id]} alt=""/> : <div className="avatar">{initials(name)}</div>}<div className="post-author"><strong>{name}</strong><span>@{person?.username || "campusmember"} · {new Date(post.created_at).toLocaleString()}</span></div><span className="channel-tag">{channels.find((item) => item.id === post.channel)?.label}</span></div>
                   <p className="post-body">{post.body}</p>
                   <div className="comment-list">
                     {(comments[post.id] ?? []).map((comment) => {
                       const commenter = profiles[comment.author_id];
-                      return <div className="comment" key={comment.id}><div className="comment-avatar">{initials(commenter?.display_name || "UEW")}</div><div><strong>{commenter?.display_name || "UEW student"}</strong><p>{comment.body}</p><time>{new Date(comment.created_at).toLocaleString()}</time></div></div>;
+                      return <div className="comment" key={comment.id}>{avatarUrls[comment.author_id] ? <img className="comment-avatar" src={avatarUrls[comment.author_id]} alt=""/> : <div className="comment-avatar">{initials(commenter?.display_name || "UEW")}</div>}<div><strong>{commenter?.display_name || "UEW student"}</strong><p>{comment.body}</p><time>{new Date(comment.created_at).toLocaleString()}</time></div></div>;
                     })}
                   </div>
                   <form className="comment-form" onSubmit={(event) => publishComment(event, post.id)}>
