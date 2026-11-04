@@ -18,6 +18,8 @@ CampusConnect is a university community app for the University of Education, Win
 - Private-group invitations with an in-app invitation inbox and verified-member acceptance
 - Owner-managed moderator promotion and removal
 - One-to-one private direct messages with member lookup, conversation inbox and live message updates
+- Campus events calendar/list with event details and Africa/Accra date display
+- Official campus announcements with important-priority highlighting; verified faculty can publish using existing institution-scoped RLS policies
 
 ## Local setup
 
@@ -55,13 +57,13 @@ The app uses existing tables:
 - `user_blocks`
 - `group_invites`
 
-The database already has row-level security enabled. The app uses only the public Supabase client and relies on those database policies; no service-role key is included. The `campus-avatars` private Storage bucket is provisioned by the `campusconnect_profile_avatars` migration. Group discussion tables and tenant-safe membership policies are provisioned by `campusconnect_groups_and_discussions`; group creation is protected by the tenant-scoped `groups_insert_owner` policy; a private-schema trigger adds the creator as group admin without exposing a privileged RPC. Private group invitations, verified-recipient acceptance, moderator permissions and column-scoped role changes are provisioned by `campusconnect_group_invites_and_moderation` and `campusconnect_group_role_column_grants`. Direct-message creation is handled by the `open_direct_conversation` SECURITY INVOKER RPC. Narrow INSERT policies enforce verified UEW membership, one-to-one membership and block checks without a SECURITY DEFINER API function. Message reads and writes are limited by conversation-membership RLS, and new messages are streamed through Supabase Realtime. Storage policies restrict uploads, replacement and deletion to each member's own user-ID folder, and allow reads only for verified campus members. Signed URLs are short-lived.
+The database already has row-level security enabled. Existing `campus_events` and `announcements` tables are used for the campus board: verified UEW members can read institution-scoped records, and verified faculty accounts can publish official items. The app uses only the public Supabase client and relies on those database policies; no service-role key is included. The `campus-avatars` private Storage bucket is provisioned by the `campusconnect_profile_avatars` migration. Group discussion tables and tenant-safe membership policies are provisioned by `campusconnect_groups_and_discussions`; group creation is protected by the tenant-scoped `groups_insert_owner` policy; a private-schema trigger adds the creator as group admin without exposing a privileged RPC. Private group invitations, verified-recipient acceptance, moderator permissions and column-scoped role changes are provisioned by `campusconnect_group_invites_and_moderation` and `campusconnect_group_role_column_grants`. Direct-message creation is handled by the `open_direct_conversation` SECURITY INVOKER RPC. Narrow INSERT policies enforce verified UEW membership, one-to-one membership and block checks without a SECURITY DEFINER API function. Message reads and writes are limited by conversation-membership RLS, and new messages are streamed through Supabase Realtime. Storage policies restrict uploads, replacement and deletion to each member's own user-ID folder, and allow reads only for verified campus members. Signed URLs are short-lived.
 
 ## Current scope / next build steps
 
 This is a first working web foundation, not a finished production social network. The next increments should add:
 1. Notifications and realtime feed updates.
-2. Campus events and announcements.
+2. Notifications and realtime feed updates.
 3. Reporting, blocking and moderator tools.
 4. An administrator-facing UEW member verification queue and audit trail.
 5. Expo Android client sharing the same Supabase backend.
