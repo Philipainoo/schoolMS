@@ -24,3 +24,25 @@
 /* Campus events and announcements */
 .campus-board-view{display:grid;gap:19px}.board-create-grid{display:grid;grid-template-columns:1fr 1fr;gap:13px}.board-form{padding:17px;display:grid;gap:12px;align-content:start}.board-form label{display:grid;gap:6px;font-size:10px;font-weight:700;color:#526158}.board-form input,.board-form textarea,.board-form select{width:100%;border:1px solid var(--line);border-radius:8px;padding:10px;font:inherit;font-size:11px;color:var(--ink);background:#fff;outline:none}.board-form input:focus,.board-form textarea:focus,.board-form select:focus{border-color:var(--green)}.board-form textarea{resize:vertical;line-height:1.6}.board-form-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}.board-form .primary-button{justify-self:start}.board-section{display:grid;gap:12px}.announcement-card{padding:17px}.announcement-card.important{border-left:3px solid #c58b35}.announcement-top{display:flex;justify-content:space-between;align-items:center;gap:10px}.announcement-priority{font-size:8px;letter-spacing:.8px;font-weight:800;color:var(--green);background:#edf5eb;padding:6px 8px;border-radius:20px}.announcement-priority.high{color:#89591d;background:#fbf1df}.announcement-top time,.event-copy small{font-size:9px;color:#98a39c}.announcement-card h3,.event-copy h3{font:800 15px/1.35 Manrope;margin:12px 0 7px}.announcement-card p,.event-copy>p{font-size:11px;line-height:1.75;color:#58675d;margin:0;white-space:pre-wrap;overflow-wrap:anywhere}.event-list{display:grid;gap:11px}.event-card{padding:16px;display:flex;gap:15px;align-items:flex-start}.event-date{width:54px;min-width:54px;height:58px;border-radius:12px;background:#eaf3e9;color:var(--green);display:grid;align-content:center;justify-items:center}.event-date strong{font:800 21px Manrope;line-height:1}.event-date span{font-size:9px;font-weight:800;text-transform:uppercase;margin-top:4px}.event-copy{min-width:0;flex:1}.event-copy h3{margin:1px 0 6px}.event-meta{display:flex;flex-wrap:wrap;gap:12px;margin-top:11px;font-size:9px;color:#728076}.event-copy small{display:block;margin-top:8px}.board-readonly-note{font-size:10px;color:var(--muted);line-height:1.6;padding:12px 14px;background:#f4f7f2;border-radius:9px}
 @media(max-width:700px){.board-create-grid{grid-template-columns:1fr}.board-form-row{grid-template-columns:1fr}.event-card{padding:13px;gap:11px}.event-date{width:46px;min-width:46px;height:54px}.announcement-top{align-items:flex-start;flex-direction:column}}
+
+/* CampusConnect notification inbox */
+.topbar-actions{display:flex;align-items:center;gap:12px}
+.notification-menu-wrap{position:relative}
+.notification-trigger{display:flex;align-items:center;gap:7px;border:1px solid var(--line);background:#fff;border-radius:22px;padding:8px 12px;color:var(--ink);font:700 10px Manrope;cursor:pointer}
+.notification-trigger>span{font-size:17px;color:var(--green)}
+.notification-trigger b{display:grid;place-items:center;min-width:17px;height:17px;padding:0 4px;border-radius:20px;background:var(--green);color:#fff;font-size:9px}
+.notification-popover{position:absolute;z-index:30;right:0;top:calc(100% + 10px);width:min(360px,calc(100vw - 30px));max-height:440px;overflow:auto;background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:0 18px 48px #1c35201c}
+.notification-popover-heading{display:flex;align-items:center;justify-content:space-between;padding:14px 15px;border-bottom:1px solid var(--line)}
+.notification-popover-heading strong{font:800 13px Manrope}
+.notification-popover-heading button{border:0;background:none;color:var(--green);font-size:10px;font-weight:700;cursor:pointer}
+.notification-empty{margin:0;padding:18px;color:var(--muted);font-size:10px;line-height:1.7}
+.notification-list{display:grid}
+.notification-item{width:100%;display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border:0;border-bottom:1px solid #edf1ed;background:#fff;text-align:left;cursor:pointer}
+.notification-item:hover,.notification-item.unread{background:#f5f8f3}
+.notification-dot{width:7px;height:7px;flex:none;margin-top:5px;border-radius:50%;background:transparent}
+.notification-item.unread .notification-dot{background:var(--green)}
+.notification-item-copy{display:grid;gap:3px;min-width:0}
+.notification-item-copy strong{font-size:10px;color:var(--ink)}
+.notification-item-copy>span{font-size:10px;color:#5e6b62;line-height:1.5}
+.notification-item-copy time{font-size:8px;color:#98a39c}
+@media(max-width:700px){.topbar-actions{gap:7px}.notification-trigger{padding:7px 9px;font-size:9px}.notification-popover{right:-52px}}
