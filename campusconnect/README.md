@@ -11,6 +11,8 @@ CampusConnect is a university community app for the University of Education, Win
 - Campus, academic and marketplace post channels
 - Feed reading, profile names, post publishing and threaded comments against the existing RLS-protected Supabase tables
 - Email confirmation messaging
+- Editable student profiles with bio, programme/major, department and graduation year
+- Private profile-photo uploads (JPG, PNG and WebP, 2 MB maximum) with signed image URLs
 
 ## Local setup
 
@@ -39,13 +41,12 @@ The app uses existing tables:
 - `profiles`
 - `posts`
 
-The database already has row-level security enabled. The app uses only the public Supabase client and relies on those database policies; no service-role key is included.
+The database already has row-level security enabled. The app uses only the public Supabase client and relies on those database policies; no service-role key is included. The `campus-avatars` private Storage bucket is provisioned by the `campusconnect_profile_avatars` migration. Storage policies restrict uploads, replacement and deletion to each member's own user-ID folder, and allow reads only for verified campus members. Signed URLs are short-lived.
 
 ## Current scope / next build steps
 
 This is a first working web foundation, not a finished production social network. The next increments should add:
-1. Profile editing and avatar uploads with a private/public storage policy.
-2. Notifications and realtime feed updates.
+1. Notifications and realtime feed updates.
 3. Groups and membership workflows.
 4. Direct messages and realtime updates.
 5. Campus events and announcements.
