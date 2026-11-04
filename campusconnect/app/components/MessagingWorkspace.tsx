@@ -1,0 +1,422 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { FormEvent } from "react";
+import type { SupabaseClient, User } from "@supabase/supabase-js";
+
+type Profile = {
+  user_id: string;
+  display_name: string;
+  username: string;
+  avatar_path: string | null;
+};
+
+type Conversation = {
+  id: string;
+  created_at: string;
+  is_group: boolean;
+  title: string | null;
+  members: Profile[];
+  lastMessage: ChatMessage | null;
+};
+
+type ChatMessage = {
+  id: string;
+  conversation_id: string;
+  sender_id: string;
+  body: string;
+  attachment_paths: string[];
+  created_at: string;
+  attachmentUrls?: string[];
+};
+
+type MessagingWorkspaceProps = {
+  supabase: SupabaseClient;
+  user: User;
+};
+
+const ATTACHMENT_BUCKET = "campus-message-attachments";
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+
+function initials(value: string) {
+  return value.trim().split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase() ?? "").join("") || "U";
+}
+
+function friendlyTime(value: string) {
+  return new Intl.DateTimeFormat("en-GH", { hour: "numeric", minute: "2-digit" }).format(new Date(value));
+}
+
+export default function MessagingWorkspace({ supabase, user }: MessagingWorkspaceProps) {
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+  const [threadMessages, setThreadMessages] = useState<ChatMessage[]>([]);
+  const [memberSearch, setMemberSearch] = useState("");
+  const [memberResult, setMemberResult] = useState<Profile | null>(null);
+  const [searchBusy, setSearchBusy] = useState(false);
+  const [messageDraft, setMessageDraft] = useState("");
+  const [selectedImage, setSelectedImage] = useState<File | null>(null);
+  const [messageBusy, setMessageBusy] = useState(false);
+  const [groupFormOpen, setGroupFormOpen] = useState(false);
+  const [groupTitle, setGroupTitle] = useState("");
+  const [groupSearch, setGroupSearch] = useState("");
+  const [groupSearchResult, setGroupSearchResult] = useState<Profile | null>(null);
+  const [groupMembers, setGroupMembers] = useState<Profile[]>([]);
+  const [groupBusy, setGroupBusy] = useState(false);
+  const [notice, setNotice] = useState("");
+  const [listBusy, setListBusy] = useState(false);
+  const imageInput = useRef<HTMLInputElement>(null);
+  const threadEnd = useRef<HTMLDivElement>(null);
+
+  const loadConversations = useCallback(async () => {
+    setListBusy(true);
+    const { data: rows, error } = await supabase
+      .from("conversations")
+      .select("id,created_at,is_group,title")
+      .order("created_at", { ascending: false })
+      .limit(60);
+    if (error) {
+      setNotice(error.message);
+      setListBusy(false);
+      return;
+    }
+    const ids = (rows ?? []).map((row) => row.id as string);
+    if (!ids.length) {
+      setConversations([]);
+      setListBusy(false);
+      return;
+    }
+
+    const { data: memberRows, error: membersError } = await supabase
+      .from("conversation_members")
+      .select("conversation_id,user_id")
+      .in("conversation_id", ids);
+    if (membersError) {
+      setNotice(membersError.message);
+      setListBusy(false);
+      return;
+    }
+
+    const userIds = [...new Set((memberRows ?? []).map((row) => row.user_id as string))];
+    const { data: people, error: peopleError } = await supabase
+      .from("profiles")
+      .select("user_id,display_name,username,avatar_path")
+      .in("user_id", userIds);
+    if (peopleError) {
+      setNotice(peopleError.message);
+      setListBusy(false);
+      return;
+    }
+    const peopleMap = new Map<string, Profile>();
+    ((people ?? []) as Profile[]).forEach((person) => peopleMap.set(person.user_id, person));
+
+    const { data: messageRows, error: messagesError } = await supabase
+      .from("messages")
+      .select("id,conversation_id,sender_id,body,attachment_paths,created_at")
+      .in("conversation_id", ids)
+      .order("created_at", { ascending: false })
+      .limit(500);
+    if (messagesError) {
+      setNotice(messagesError.message);
+      setListBusy(false);
+      return;
+    }
+    const latest = new Map<string, ChatMessage>();
+    ((messageRows ?? []) as ChatMessage[]).forEach((message) => {
+      if (!latest.has(message.conversation_id)) latest.set(message.conversation_id, message);
+    });
+
+    const memberMap = new Map<string, Profile[]>();
+    (memberRows ?? []).forEach((row) => {
+      const person = peopleMap.get(row.user_id as string);
+      if (!person) return;
+      memberMap.set(row.conversation_id as string, [...(memberMap.get(row.conversation_id as string) ?? []), person]);
+    });
+
+    const result: Conversation[] = (rows ?? []).map((row) => ({
+      id: row.id as string,
+      created_at: row.created_at as string,
+      is_group: Boolean(row.is_group),
+      title: (row.title as string | null) ?? null,
+      members: memberMap.get(row.id as string) ?? [],
+      lastMessage: latest.get(row.id as string) ?? null,
+    })).sort((a, b) => new Date(b.lastMessage?.created_at ?? b.created_at).getTime() - new Date(a.lastMessage?.created_at ?? a.created_at).getTime());
+
+    setConversations(result);
+    setListBusy(false);
+  }, [supabase]);
+
+  const loadThread = useCallback(async (conversationId: string) => {
+    const { data, error } = await supabase
+      .from("messages")
+      .select("id,conversation_id,sender_id,body,attachment_paths,created_at")
+      .eq("conversation_id", conversationId)
+      .order("created_at", { ascending: true })
+      .limit(200);
+    if (error) {
+      setNotice(error.message);
+      return;
+    }
+    const messages = (data ?? []) as ChatMessage[];
+    const hydrated = await Promise.all(messages.map(async (message) => {
+      const paths = message.attachment_paths ?? [];
+      if (!paths.length) return { ...message, attachmentUrls: [] };
+      const urls = await Promise.all(paths.map(async (path) => {
+        const { data: signed } = await supabase.storage.from(ATTACHMENT_BUCKET).createSignedUrl(path, 3600);
+        return signed?.signedUrl ?? null;
+      }));
+      return { ...message, attachmentUrls: urls.filter((url): url is string => Boolean(url)) };
+    }));
+    setThreadMessages(hydrated);
+  }, [supabase]);
+
+  useEffect(() => {
+    void loadConversations();
+  }, [loadConversations]);
+
+  useEffect(() => {
+    if (activeConversationId) void loadThread(activeConversationId);
+  }, [activeConversationId, loadThread]);
+
+  useEffect(() => {
+    threadEnd.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [threadMessages]);
+
+  useEffect(() => {
+    const channel = supabase.channel("campusconnect-messages-ui-" + user.id)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, (payload) => {
+        const message = payload.new as ChatMessage;
+        if (message.conversation_id === activeConversationId) void loadThread(message.conversation_id);
+        void loadConversations();
+      })
+      .subscribe();
+    return () => { void supabase.removeChannel(channel); };
+  }, [supabase, user.id, activeConversationId, loadConversations, loadThread]);
+
+  const activeConversation = conversations.find((conversation) => conversation.id === activeConversationId) ?? null;
+  const activeTitle = activeConversation
+    ? activeConversation.is_group
+      ? activeConversation.title || "Campus group chat"
+      : activeConversation.members.find((member) => member.user_id !== user.id)?.display_name || "UEW member"
+    : "Your private conversations";
+
+  async function searchMember(username: string, setter: (profile: Profile | null) => void, setBusy: (busy: boolean) => void) {
+    const handle = username.trim().replace(/^@/, "").toLowerCase();
+    if (!handle) return;
+    setBusy(true);
+    setter(null);
+    setNotice("");
+    try {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("user_id,display_name,username,avatar_path")
+        .eq("username", handle)
+        .maybeSingle();
+      if (error) throw error;
+      if (!data || data.user_id === user.id) throw new Error("No other UEW member was found with that username.");
+      setter(data as Profile);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Member search failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function startDirectConversation(person: Profile) {
+    setMessageBusy(true);
+    setNotice("");
+    try {
+      const { data, error } = await supabase.rpc("open_direct_conversation", { target_user_id: person.user_id });
+      if (error) throw error;
+      const id = data as string;
+      setMemberResult(null);
+      setMemberSearch("");
+      await loadConversations();
+      setActiveConversationId(id);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Could not open this conversation.");
+    } finally {
+      setMessageBusy(false);
+    }
+  }
+
+  function addGroupMember(person: Profile) {
+    if (groupMembers.some((member) => member.user_id === person.user_id)) {
+      setNotice("That member is already on the group list.");
+      return;
+    }
+    if (groupMembers.length >= 19) {
+      setNotice("A group can have up to 20 members, including you.");
+      return;
+    }
+    setGroupMembers((current) => [...current, person]);
+    setGroupSearchResult(null);
+    setGroupSearch("");
+    setNotice("");
+  }
+
+  async function createGroupConversation(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!groupTitle.trim() || groupMembers.length < 1) {
+      setNotice("Add a group name and at least one other verified UEW member.");
+      return;
+    }
+    setGroupBusy(true);
+    setNotice("");
+    try {
+      const { data, error } = await supabase.rpc("create_group_conversation", {
+        target_user_ids: groupMembers.map((member) => member.user_id),
+        conversation_title: groupTitle.trim(),
+      });
+      if (error) throw error;
+      const id = data as string;
+      setGroupFormOpen(false);
+      setGroupTitle("");
+      setGroupMembers([]);
+      setGroupSearch("");
+      setGroupSearchResult(null);
+      await loadConversations();
+      setActiveConversationId(id);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Could not create the group chat.");
+    } finally {
+      setGroupBusy(false);
+    }
+  }
+
+  async function sendMessage(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!activeConversationId || (!messageDraft.trim() && !selectedImage)) return;
+    setMessageBusy(true);
+    setNotice("");
+    let uploadedPath: string | null = null;
+    try {
+      let attachmentPaths: string[] = [];
+      if (selectedImage) {
+        if (selectedImage.size > MAX_IMAGE_BYTES) throw new Error("Choose an image smaller than 5 MB.");
+        if (!["image/jpeg", "image/png", "image/webp"].includes(selectedImage.type)) {
+          throw new Error("Use a JPG, PNG or WebP image.");
+        }
+        const extension = selectedImage.type === "image/jpeg" ? "jpg" : selectedImage.type.split("/")[1];
+        uploadedPath = activeConversationId + "/" + user.id + "/" + crypto.randomUUID() + "." + extension;
+        const { error: uploadError } = await supabase.storage.from(ATTACHMENT_BUCKET)
+          .upload(uploadedPath, selectedImage, { contentType: selectedImage.type, upsert: false });
+        if (uploadError) throw uploadError;
+        attachmentPaths = [uploadedPath];
+      }
+
+      const { error } = await supabase.from("messages").insert({
+        conversation_id: activeConversationId,
+        sender_id: user.id,
+        body: messageDraft.trim() || (attachmentPaths.length ? "Shared a photo" : ""),
+        attachment_paths: attachmentPaths,
+      });
+      if (error) throw error;
+      setMessageDraft("");
+      setSelectedImage(null);
+      if (imageInput.current) imageInput.current.value = "";
+      await Promise.all([loadThread(activeConversationId), loadConversations()]);
+    } catch (error) {
+      if (uploadedPath) {
+        await supabase.storage.from(ATTACHMENT_BUCKET).remove([uploadedPath]);
+      }
+      setNotice(error instanceof Error ? error.message : "Your message could not be sent.");
+    } finally {
+      setMessageBusy(false);
+    }
+  }
+
+  return (
+    <div className="messages-view">
+      <div className="feed-heading">
+        <div>
+          <div className="eyebrow">PRIVATE CAMPUS CHATS</div>
+          <h1>Messages</h1>
+          <p className="muted">Private chats with verified UEW members, classmates and groups.</p>
+        </div>
+        <div className="campus-pill"><span /> PRIVATE</div>
+      </div>
+
+      {notice && <p className="notice" role="status">{notice}</p>}
+
+      <div className="messaging-actions">
+        <form className="message-search-card card" onSubmit={(event) => { event.preventDefault(); void searchMember(memberSearch, setMemberResult, setSearchBusy); }}>
+          <label htmlFor="message-member-search">Start a one-to-one conversation</label>
+          <div className="message-search-row">
+            <input id="message-member-search" value={memberSearch} onChange={(event) => setMemberSearch(event.target.value)} placeholder="Search exact username, e.g. ama_owusu" />
+            <button className="primary-button compact" disabled={searchBusy || !memberSearch.trim()}>{searchBusy ? "Searching…" : "Find member"}</button>
+          </div>
+          {memberResult && <div className="message-member-result">
+            <div><strong>{memberResult.display_name}</strong><span>@{memberResult.username}</span></div>
+            <button type="button" className="primary-button compact" disabled={messageBusy} onClick={() => void startDirectConversation(memberResult)}>Message</button>
+          </div>}
+        </form>
+
+        <button type="button" className="profile-edit-button group-chat-toggle" onClick={() => setGroupFormOpen((open) => !open)}>
+          {groupFormOpen ? "Close group form" : "＋ Create group chat"}
+        </button>
+      </div>
+
+      {groupFormOpen && <form className="group-chat-form card" onSubmit={createGroupConversation}>
+        <div><strong>Start a group conversation</strong><p className="muted">Choose a name and add verified UEW members by username.</p></div>
+        <label>Group name<input required minLength={2} maxLength={80} value={groupTitle} onChange={(event) => setGroupTitle(event.target.value)} placeholder="e.g. Level 300 Study Circle" /></label>
+        <div className="message-search-row">
+          <input value={groupSearch} onChange={(event) => setGroupSearch(event.target.value)} placeholder="Find a member by username" aria-label="Find a group member by username" />
+          <button type="button" className="profile-edit-button" disabled={searchBusy || !groupSearch.trim()} onClick={() => void searchMember(groupSearch, setGroupSearchResult, setSearchBusy)}>Find member</button>
+        </div>
+        {groupSearchResult && <div className="message-member-result">
+          <div><strong>{groupSearchResult.display_name}</strong><span>@{groupSearchResult.username}</span></div>
+          <button type="button" className="primary-button compact" onClick={() => addGroupMember(groupSearchResult)}>Add member</button>
+        </div>}
+        {groupMembers.length > 0 && <div className="group-chat-member-list">
+          {groupMembers.map((member) => <span key={member.user_id}>{member.display_name} <button type="button" aria-label={"Remove " + member.display_name} onClick={() => setGroupMembers((current) => current.filter((item) => item.user_id !== member.user_id))}>×</button></span>)}
+        </div>}
+        <button className="primary-button compact" disabled={groupBusy || !groupTitle.trim() || groupMembers.length < 1}>{groupBusy ? "Creating…" : "Create group conversation"}</button>
+      </form>}
+
+      <div className="message-workspace card">
+        <section className="conversation-list">
+          <div className="groups-section-heading"><h2>Your chats</h2><span>{conversations.length}</span></div>
+          {listBusy && conversations.length === 0 ? <p className="message-empty-copy">Loading conversations…</p> : conversations.length === 0 ? <p className="message-empty-copy">No conversations yet. Search for a UEW username or create a group chat.</p> : conversations.map((conversation) => {
+            const peer = conversation.members.find((member) => member.user_id !== user.id);
+            const title = conversation.is_group ? conversation.title || "Campus group chat" : peer?.display_name || "UEW member";
+            const preview = conversation.lastMessage
+              ? (conversation.lastMessage.sender_id === user.id ? "You: " : "") + (conversation.lastMessage.attachment_paths?.length ? "📷 " : "") + conversation.lastMessage.body
+              : conversation.is_group ? "Group conversation created" : "Start the conversation";
+            return <button type="button" className={activeConversationId === conversation.id ? "conversation-item active" : "conversation-item"} key={conversation.id} onClick={() => setActiveConversationId(conversation.id)}>
+              <span className="conversation-avatar">{conversation.is_group ? "GC" : initials(title)}</span>
+              <span className="conversation-item-copy">
+                <strong>{title}</strong>
+                <small>{conversation.is_group ? conversation.members.length + " members" : "@" + (peer?.username || "campusmember")}</small>
+                <span>{preview}</span>
+              </span>
+            </button>;
+          })}
+        </section>
+
+        <section className="message-thread">
+          {activeConversationId ? <>
+            <div className="message-thread-heading">
+              <strong>{activeTitle}</strong>
+              <span>{activeConversation?.is_group ? "Group conversation · " + activeConversation.members.length + " members" : "Private one-to-one conversation"}</span>
+            </div>
+            <div className="message-thread-body">
+              {threadMessages.length === 0 ? <div className="message-thread-empty">Say hello and start the conversation.</div> : threadMessages.map((message) => <div key={message.id} className={message.sender_id === user.id ? "message-bubble mine" : "message-bubble"}>
+                <p>{message.body}</p>
+                {message.attachmentUrls?.map((url) => <a className="message-image-link" href={url} target="_blank" rel="noreferrer" key={url}><img className="message-image" src={url} alt="Image shared in this conversation" /></a>)}
+                <time>{friendlyTime(message.created_at)}</time>
+              </div>)}
+              <div ref={threadEnd} />
+            </div>
+            <form className="message-compose" onSubmit={sendMessage}>
+              <input value={messageDraft} onChange={(event) => setMessageDraft(event.target.value)} maxLength={10000} placeholder="Write a message…" aria-label="Write a message" />
+              <input ref={imageInput} className="message-image-input" type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setSelectedImage(event.target.files?.[0] ?? null)} aria-label="Attach an image" />
+              <button type="button" className="message-attach-button" onClick={() => imageInput.current?.click()} title="Attach an image">＋ Photo</button>
+              <button className="primary-button compact" disabled={messageBusy || (!messageDraft.trim() && !selectedImage)}>{messageBusy ? "Sending…" : "Send"} <span>→</span></button>
+            </form>
+            {selectedImage && <div className="message-selected-image">Selected: {selectedImage.name} <button type="button" onClick={() => { setSelectedImage(null); if (imageInput.current) imageInput.current.value = ""; }}>Remove</button></div>}
+          </> : <div className="message-thread-placeholder"><span>✉</span><strong>Your private conversations</strong><p>Choose a chat, find a UEW member or create a group to begin.</p></div>}
+        </section>
+      </div>
+    </div>
+  );
+}
