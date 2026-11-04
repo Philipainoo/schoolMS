@@ -13,7 +13,7 @@ CampusConnect is a university community app for the University of Education, Win
 - Email confirmation messaging
 - Editable student profiles with bio, programme/major, department and graduation year
 - Private profile-photo uploads (JPG, PNG and WebP, 2 MB maximum) with signed image URLs
-- UEW communities: create public groups, browse, join and leave communities
+- UEW communities: create public and private groups, browse, join and leave public communities
 - Member-only group discussions with author, owner and moderator post deletion
 - Private-group invitations with an in-app invitation inbox and verified-member acceptance
 - Owner-managed moderator promotion and removal
