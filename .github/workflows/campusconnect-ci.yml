@@ -2,7 +2,7 @@ name: CampusConnect CI
 
 on:
   push:
-    branches: [campusconnect-conversion, campusconnect-messaging-enhancements, campusconnect-message-read-receipts, campusconnect-group-member-management, campusconnect-typing-indicators, campusconnect-message-edit-delete, campusconnect-group-chat-settings]
+    branches: [campusconnect-conversion, campusconnect-messaging-enhancements, campusconnect-message-read-receipts, campusconnect-group-member-management, campusconnect-typing-indicators, campusconnect-message-edit-delete, campusconnect-group-chat-settings, campusconnect-group-profiles]
     paths:
       - "campusconnect/**"
       - ".github/workflows/campusconnect-ci.yml"
