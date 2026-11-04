@@ -116,7 +116,7 @@ begin
     return;
   end if;
 
-  if requester_role not in ('owner','admin') then
+  if requester_role is null or requester_role not in ('owner','admin') then
     raise exception 'Only group owners and administrators can manage members.';
   end if;
 
@@ -139,6 +139,7 @@ begin
     ) then
       raise exception 'This member cannot be added because of a block relationship.';
     end if;
+    perform pg_advisory_xact_lock(hashtextextended(target_conversation_id::text, 0));
     select count(*) into member_count
     from public.conversation_members cm
     where cm.conversation_id = target_conversation_id
