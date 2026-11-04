@@ -9,7 +9,7 @@ CampusConnect is a university community app for the University of Education, Win
 - Supabase email/password authentication
 - UEW tenant lookup using the existing `institutions.slug = 'uew'` record
 - Campus, academic and marketplace post channels
-- Feed reading, profile names and post publishing against the existing RLS-protected Supabase tables
+- Feed reading, profile names, post publishing and threaded comments against the existing RLS-protected Supabase tables
 - Email confirmation messaging
 
 ## Local setup
@@ -45,7 +45,7 @@ The database already has row-level security enabled. The app uses only the publi
 
 This is a first working web foundation, not a finished production social network. The next increments should add:
 1. Profile editing and avatar uploads with a private/public storage policy.
-2. Comments and notifications.
+2. Notifications and realtime feed updates.
 3. Groups and membership workflows.
 4. Direct messages and realtime updates.
 5. Campus events and announcements.
