@@ -73,3 +73,28 @@
 .dashboard-stat-arrow{margin-left:auto;color:#93a397;font-size:12px}
 @media(max-width:900px){.dashboard-quick-stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:560px){.dashboard-welcome{min-height:180px;padding:22px 19px}.dashboard-welcome h1{font-size:23px}.dashboard-crest{right:8px;width:85px;height:84px;opacity:.1}.dashboard-welcome-copy{max-width:100%}.dashboard-welcome p{max-width:290px}.dashboard-quick-stats{gap:8px}.dashboard-stat-card{padding:11px 9px;gap:8px}.dashboard-stat-copy small{font-size:8px}.dashboard-stat-icon{width:29px;height:29px}}
+
+
+/* UEW member discovery */
+.discover-search{padding:18px;display:grid;gap:10px;margin:17px 0 20px}
+.discover-search>label{font:700 12px Manrope;color:var(--ink)}
+.discover-search-row{display:flex;gap:9px}
+.discover-search-row input{min-width:0;flex:1;border:1px solid var(--line);border-radius:9px;padding:11px 13px;font:inherit;font-size:11px;outline:none}
+.discover-search-row input:focus{border-color:var(--green)}
+.discover-search>p{font-size:9px;color:var(--muted);margin:0;line-height:1.6}
+.discover-results-heading{display:flex;justify-content:space-between;align-items:center;margin:0 0 12px}
+.discover-results-heading h2{font:800 16px Manrope;margin:0}
+.discover-results-heading span{font-size:10px;color:var(--muted)}
+.discover-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.discover-card{padding:16px;min-width:0}
+.discover-person{display:flex;align-items:center;gap:11px}
+.discover-avatar{width:48px;height:48px;border-radius:50%;object-fit:cover;flex:none}
+.discover-avatar-fallback{display:grid;place-items:center;background:#e8f2e9;color:var(--green);font:800 14px Manrope}
+.discover-person-copy{display:grid;gap:4px;min-width:0}
+.discover-person-copy strong{font:700 12px Manrope;overflow-wrap:anywhere}
+.discover-person-copy span{font-size:10px;color:var(--green)}
+.discover-details{display:flex;flex-wrap:wrap;gap:7px;margin:14px 0 9px}
+.discover-details span{font-size:9px;color:#5e6d62;background:#f1f6f0;border-radius:20px;padding:6px 8px}
+.discover-bio{font-size:10px;line-height:1.65;color:var(--muted);min-height:34px;margin:0 0 13px;overflow-wrap:anywhere}
+.discover-message{width:100%;display:flex;justify-content:center;gap:7px}
+@media(max-width:700px){.discover-grid{grid-template-columns:1fr}.discover-search-row{flex-direction:column}.discover-search-row .primary-button{justify-content:center}}
