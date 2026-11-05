@@ -63,7 +63,7 @@ export default function MarketplacePage() {
     setImageUrls(Object.fromEntries(signedImages.filter((item)=>item!==null) as Array<readonly [string,string]>));
     const [{data:requestRows},{data:reviewRows}]=await Promise.all([
       supabase.from("marketplace_purchase_requests").select("id,listing_id,buyer_id,seller_id,status").or("buyer_id.eq."+user.id+",seller_id.eq."+user.id),
-      supabase.from("marketplace_reviews").select("id,listing_id,seller_id,buyer_id,rating,review_text").in("listing_id",rows.length?rows.map(row=>row.id):["00000000-0000-0000-0000-000000000000"])
+      supabase.from("marketplace_reviews").select("id,listing_id,seller_id,buyer_id,rating,review_text").in("seller_id",rows.length?[...new Set(rows.map(row=>row.seller_id))]:["00000000-0000-0000-0000-000000000000"])
     ]);
     const requests=(requestRows ?? []) as PurchaseRequest[];
     setPurchaseRequests(requests);
