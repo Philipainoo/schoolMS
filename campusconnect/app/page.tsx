@@ -58,7 +58,10 @@ export default function Home() {
   const [filter, setFilter] = useState<"all" | Post["channel"]>("all");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
-  const [activeView, setActiveView] = useState<"feed" | "groups" | "messages" | "events">("feed");
+  const [activeView, setActiveView] = useState<"feed" | "discover" | "groups" | "messages" | "events">("feed");
+  const [discoverySearch, setDiscoverySearch] = useState("");
+  const [discoveredMembers, setDiscoveredMembers] = useState<Profile[]>([]);
+  const [discoveryBusy, setDiscoveryBusy] = useState(false);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [threadMessages, setThreadMessages] = useState<DirectMessage[]>([]);
@@ -228,6 +231,33 @@ export default function Home() {
       .limit(150);
     if (error) { setNotice(error.message); return; }
     setThreadMessages((data ?? []) as DirectMessage[]);
+  }
+
+  async function searchCampusMembers(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!supabase || !discoverySearch.trim()) return;
+    setDiscoveryBusy(true); setNotice("");
+    try {
+      const term = discoverySearch.trim().replace(/[,%()]/g, " ").slice(0, 80);
+      const { data, error } = await supabase.from("profiles")
+        .select("user_id,display_name,username,avatar_path,bio,major,department,graduation_year")
+        .or("display_name.ilike.%"+term+"%,username.ilike.%"+term+"%,major.ilike.%"+term+"%")
+        .neq("user_id", user?.id || "")
+        .order("display_name", { ascending: true })
+        .limit(24);
+      if (error) throw error;
+      const people = (data ?? []) as Profile[];
+      setDiscoveredMembers(people);
+      setProfiles((current) => ({ ...current, ...Object.fromEntries(people.map((person) => [person.user_id, person])) }));
+      const signed = await Promise.all(people.filter((person) => person.avatar_path).map(async (person) => {
+        const { data: result } = await supabase.storage.from("campus-avatars").createSignedUrl(person.avatar_path as string, 3600);
+        return result?.signedUrl ? [person.user_id, result.signedUrl] as const : null;
+      }));
+      setAvatarUrls((current) => ({ ...current, ...Object.fromEntries(signed.filter((item): item is readonly [string, string] => item !== null)) }));
+      if (!people.length) setNotice("No matching members were found. Try a name, username or programme.");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Member search is unavailable right now.");
+    } finally { setDiscoveryBusy(false); }
   }
 
   async function findMessageMember(event: FormEvent<HTMLFormElement>) {
@@ -944,6 +974,7 @@ export default function Home() {
           <aside className="sidebar">
             <div className="side-label">YOUR CAMPUS</div>
             <button className={activeView === "feed" ? "side-link selected" : "side-link"} onClick={() => { setActiveView("feed"); setActiveGroupId(null); }}><span>⌂</span> Home feed</button>
+            <button className={activeView === "discover" ? "side-link selected" : "side-link"} onClick={() => { setActiveView("discover"); setActiveGroupId(null); }}><span>⌕</span> Discover people</button>
             <button className={activeView === "groups" ? "side-link selected" : "side-link"} onClick={() => { setActiveView("groups"); setActiveGroupId(null); void loadGroups(); }}><span>◎</span> Communities</button>
             <button className={activeView === "messages" ? "side-link selected" : "side-link"} onClick={() => { setActiveView("messages"); setActiveGroupId(null); void loadConversations(); }}><span>✉</span> Messages</button>
             <button className={activeView === "events" ? "side-link selected" : "side-link"} onClick={() => { setActiveView("events"); setActiveGroupId(null); void loadCampusBoard(); }}><span>▦</span> Events & notices</button>
@@ -1078,6 +1109,28 @@ export default function Home() {
                 </section>
                 {accountRole !== "faculty" && <p className="board-readonly-note">Only verified UEW faculty accounts can publish official events and announcements. Contact your campus administrator if you need publishing access.</p>}
               </div>
+            </div>
+            <div className={activeView === "discover" ? "view-content" : "view-content hidden"}>
+              <div className="feed-heading"><div><span className="eyebrow">MEET YOUR CAMPUS</span><h1>Discover people</h1><p>Find UEW members by name, username or programme.</p></div><span className="campus-pill">UEW COMMUNITY</span></div>
+              <form className="discover-search card" onSubmit={searchCampusMembers}>
+                <label htmlFor="campus-member-search">Search the campus directory</label>
+                <div className="discover-search-row"><input id="campus-member-search" value={discoverySearch} onChange={(event) => setDiscoverySearch(event.target.value)} placeholder="Try a name, @username or programme…" maxLength={80} required/><button className="primary-button" disabled={discoveryBusy || !discoverySearch.trim()}>{discoveryBusy ? "Searching…" : "Search members"}</button></div>
+                <p>Results follow the profile visibility and access rules configured for CampusConnect.</p>
+              </form>
+              <div className="discover-results-heading"><h2>Campus members</h2><span>{discoveredMembers.length ? discoveredMembers.length+" results" : "Search to get started"}</span></div>
+              {discoveredMembers.length ? <div className="discover-grid">{discoveredMembers.map((person) => <article className="discover-card card" key={person.user_id}>
+                <div className="discover-person">
+                  {avatarUrls[person.user_id] ? <img className="discover-avatar" src={avatarUrls[person.user_id]} alt={person.display_name+" profile"}/> : <div className="discover-avatar discover-avatar-fallback">{initials(person.display_name)}</div>}
+                  <div className="discover-person-copy"><strong>{person.display_name}</strong><span>@{person.username}</span></div>
+                </div>
+                <div className="discover-details">
+                  {person.major && <span>📚 {person.major}</span>}
+                  {person.department && <span>🏛 {person.department}</span>}
+                  {person.graduation_year && <span>🎓 Class of {person.graduation_year}</span>}
+                </div>
+                <p className="discover-bio">{person.bio || "This member hasn't added a bio yet."}</p>
+                <button className="profile-edit-button discover-message" type="button" onClick={() => void startDirectConversation(person)} disabled={messageBusy}>Send a message <span>↗</span></button>
+              </article>)}</div> : <div className="empty card"><div className="empty-icon">⌕</div><h3>Find your UEW people</h3><p>Search by a student's name, username or programme to discover members and start a conversation.</p></div>}
             </div>
             <div className={activeView === "groups" ? "view-content" : "view-content hidden"}>
               {activeGroup ? (
