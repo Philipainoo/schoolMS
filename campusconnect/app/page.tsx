@@ -951,6 +951,32 @@ export default function Home() {
           </aside>
           <section className="feed-column">
             <div className={activeView === "feed" ? "view-content" : "view-content hidden"}>
+            <section className="dashboard-welcome">
+              <div className="dashboard-welcome-copy">
+                <span className="dashboard-kicker">YOUR UEW COMMUNITY</span>
+                <h1>Good {new Date().getHours() < 12 ? "morning" : new Date().getHours() < 17 ? "afternoon" : "evening"}, {myProfile?.display_name?.split(" ")[0] || "there"}.</h1>
+                <p>Your campus, your people, your next opportunity. See what’s happening across Winneba today.</p>
+                <div className="dashboard-welcome-actions">
+                  <button type="button" onClick={() => document.querySelector<HTMLTextAreaElement>(".composer textarea")?.focus()}>Share an update <span>↗</span></button>
+                  <button type="button" className="dashboard-secondary-action" onClick={() => { setActiveView("events"); void loadCampusBoard(); }}>Explore events</button>
+                </div>
+              </div>
+              <Image src="/uew-logo.svg" alt="" aria-hidden="true" width={116} height={114} className="dashboard-crest" priority/>
+            </section>
+            <section className="dashboard-quick-stats" aria-label="Campus activity overview">
+              <button type="button" className="dashboard-stat-card" onClick={() => { setActiveView("feed"); setFilter("all"); }}>
+                <span className="dashboard-stat-icon">✳</span><span className="dashboard-stat-copy"><strong>{posts.length}</strong><small>Campus posts</small></span><span className="dashboard-stat-arrow">↗</span>
+              </button>
+              <button type="button" className="dashboard-stat-card" onClick={() => { setActiveView("groups"); void loadGroups(); }}>
+                <span className="dashboard-stat-icon">◎</span><span className="dashboard-stat-copy"><strong>{groups.length}</strong><small>Communities</small></span><span className="dashboard-stat-arrow">↗</span>
+              </button>
+              <button type="button" className="dashboard-stat-card" onClick={() => { setActiveView("events"); void loadCampusBoard(); }}>
+                <span className="dashboard-stat-icon">▦</span><span className="dashboard-stat-copy"><strong>{campusEvents.filter((event) => new Date(event.starts_at).getTime() >= Date.now()).length}</strong><small>Upcoming events</small></span><span className="dashboard-stat-arrow">↗</span>
+              </button>
+              <button type="button" className="dashboard-stat-card" onClick={() => { setActiveView("messages"); void loadConversations(); }}>
+                <span className="dashboard-stat-icon">✉</span><span className="dashboard-stat-copy"><strong>{conversations.length}</strong><small>Your chats</small></span><span className="dashboard-stat-arrow">↗</span>
+              </button>
+            </section>
             <section className="profile-summary card">
               <div className="profile-identity">
                 <div className="profile-avatar-wrap">
