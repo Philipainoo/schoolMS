@@ -62,6 +62,9 @@ export default function Home() {
   const [discoverySearch, setDiscoverySearch] = useState("");
   const [discoveredMembers, setDiscoveredMembers] = useState<Profile[]>([]);
   const [discoveryBusy, setDiscoveryBusy] = useState(false);
+  const [connectionRows, setConnectionRows] = useState<Array<{id:string; requester_id:string; recipient_id:string; status:"pending"|"accepted"|"declined"; created_at:string}>>([]);
+  const [connectionProfiles, setConnectionProfiles] = useState<Record<string, Profile>>({});
+  const [connectionBusy, setConnectionBusy] = useState(false);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [threadMessages, setThreadMessages] = useState<DirectMessage[]>([]);
@@ -231,6 +234,66 @@ export default function Home() {
       .limit(150);
     if (error) { setNotice(error.message); return; }
     setThreadMessages((data ?? []) as DirectMessage[]);
+  }
+
+  async function loadConnections() {
+    if (!supabase || !user) return;
+    setConnectionBusy(true);
+    try {
+      const { data, error } = await supabase.from("campus_connections")
+        .select("id,requester_id,recipient_id,status,created_at")
+        .or("requester_id.eq."+user.id+",recipient_id.eq."+user.id)
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      const rows = (data ?? []) as typeof connectionRows;
+      setConnectionRows(rows);
+      const ids = [...new Set(rows.map((row) => row.requester_id === user.id ? row.recipient_id : row.requester_id))];
+      if (ids.length) {
+        const { data: people, error: peopleError } = await supabase.from("profiles")
+          .select("user_id,display_name,username,avatar_path,bio,major,department,graduation_year").in("user_id", ids);
+        if (peopleError) throw peopleError;
+        const mapped = Object.fromEntries(((people ?? []) as Profile[]).map((person) => [person.user_id, person]));
+        setConnectionProfiles(mapped);
+        setProfiles((current) => ({ ...current, ...mapped }));
+        const signed = await Promise.all(Object.values(mapped).filter((person) => person.avatar_path).map(async (person) => {
+          const { data: result } = await supabase.storage.from("campus-avatars").createSignedUrl(person.avatar_path as string, 3600);
+          return result?.signedUrl ? [person.user_id, result.signedUrl] as const : null;
+        }));
+        setAvatarUrls((current) => ({ ...current, ...Object.fromEntries(signed.filter((item): item is readonly [string, string] => item !== null)) }));
+      } else setConnectionProfiles({});
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Could not load your connections.");
+    } finally { setConnectionBusy(false); }
+  }
+
+  async function sendConnectionRequest(person: Profile) {
+    if (!supabase || !user) return;
+    setConnectionBusy(true); setNotice("");
+    try {
+      const { data: account, error: accountError } = await supabase.from("users").select("institution_id").eq("id", user.id).single();
+      if (accountError || !account) throw new Error("Your UEW account could not be loaded.");
+      const { error } = await supabase.from("campus_connections").insert({
+        institution_id: account.institution_id, requester_id: user.id, recipient_id: person.user_id, status: "pending"
+      });
+      if (error) throw error;
+      setNotice("Connection request sent to " + person.display_name + ".");
+      await loadConnections();
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Could not send the connection request.");
+    } finally { setConnectionBusy(false); }
+  }
+
+  async function respondToConnection(id: string, status: "accepted" | "declined") {
+    if (!supabase) return;
+    setConnectionBusy(true); setNotice("");
+    try {
+      const { error } = await supabase.from("campus_connections").update({ status, updated_at: new Date().toISOString() }).eq("id", id);
+      if (error) throw error;
+      setNotice(status === "accepted" ? "Connection accepted." : "Request declined.");
+      await loadConnections();
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Could not update this request.");
+    } finally { setConnectionBusy(false); }
   }
 
   async function searchCampusMembers(event: FormEvent<HTMLFormElement>) {
@@ -975,7 +1038,7 @@ export default function Home() {
             <div className="side-label">YOUR CAMPUS</div>
             <button className={activeView === "feed" ? "side-link selected" : "side-link"} onClick={() => { setActiveView("feed"); setActiveGroupId(null); }}><span>⌂</span> Home feed</button>
             <button className={activeView === "discover" ? "side-link selected" : "side-link"} onClick={() => { setActiveView("discover"); setActiveGroupId(null); }}><span>⌕</span> Discover people</button>
-            <button className={activeView === "groups" ? "side-link selected" : "side-link"} onClick={() => { setActiveView("groups"); setActiveGroupId(null); void loadGroups(); }}><span>◎</span> Communities</button>
+            <button className={activeView === "connections" ? "side-link selected" : "side-link"} onClick={() => { setActiveView("connections"); setActiveGroupId(null); void loadConnections(); }}><span>♡</span> Connections</button>\n            <button className={activeView === "groups" ? "side-link selected" : "side-link"} onClick={() => { setActiveView("groups"); setActiveGroupId(null); void loadGroups(); }}><span>◎</span> Communities</button>
             <button className={activeView === "messages" ? "side-link selected" : "side-link"} onClick={() => { setActiveView("messages"); setActiveGroupId(null); void loadConversations(); }}><span>✉</span> Messages</button>
             <button className={activeView === "events" ? "side-link selected" : "side-link"} onClick={() => { setActiveView("events"); setActiveGroupId(null); void loadCampusBoard(); }}><span>▦</span> Events & notices</button>
             <div className="sidebar-note"><strong>UEW · Winneba</strong><p>A community built around your campus experience.</p></div>
@@ -1129,8 +1192,28 @@ export default function Home() {
                   {person.graduation_year && <span>🎓 Class of {person.graduation_year}</span>}
                 </div>
                 <p className="discover-bio">{person.bio || "This member hasn't added a bio yet."}</p>
-                <button className="profile-edit-button discover-message" type="button" onClick={() => void startDirectConversation(person)} disabled={messageBusy}>Send a message <span>↗</span></button>
+                <div className="discover-card-actions"><button className="profile-edit-button" type="button" onClick={() => void sendConnectionRequest(person)} disabled={connectionBusy || connectionRows.some((row) => row.status === "accepted" || (row.status === "pending" && (row.requester_id === user?.id ? row.recipient_id : row.requester_id) === person.user_id))}>Connect</button><button className="profile-edit-button discover-message" type="button" onClick={() => void startDirectConversation(person)} disabled={messageBusy}>Message <span>↗</span></button></div>
               </article>)}</div> : <div className="empty card"><div className="empty-icon">⌕</div><h3>Find your UEW people</h3><p>Search by a student's name, username or programme to discover members and start a conversation.</p></div>}
+            </div>
+            <div className={activeView === "connections" ? "view-content" : "view-content hidden"}>
+              <div className="feed-heading"><div><span className="eyebrow">YOUR UEW NETWORK</span><h1>Connections</h1><p>Build your campus circle and keep up with classmates.</p></div><span className="campus-pill">UEW COMMUNITY</span></div>
+              <div className="connection-summary-grid">
+                <div className="connection-summary card"><strong>{connectionRows.filter((row) => row.status === "accepted").length}</strong><span>Connections</span></div>
+                <div className="connection-summary card"><strong>{connectionRows.filter((row) => row.status === "pending" && row.recipient_id === user?.id).length}</strong><span>Requests received</span></div>
+                <div className="connection-summary card"><strong>{connectionRows.filter((row) => row.status === "pending" && row.requester_id === user?.id).length}</strong><span>Requests sent</span></div>
+              </div>
+              <section className="connections-section"><div className="discover-results-heading"><h2>Received requests</h2><span>People who want to connect</span></div>
+                {connectionRows.filter((row) => row.status === "pending" && row.recipient_id === user?.id).map((row) => { const person = connectionProfiles[row.requester_id]; return <article className="connection-row card" key={row.id}><div className="connection-person">{avatarUrls[row.requester_id] ? <img className="discover-avatar" src={avatarUrls[row.requester_id]} alt=""/> : <div className="discover-avatar discover-avatar-fallback">{person ? initials(person.display_name) : "UEW"}</div>}<div className="discover-person-copy"><strong>{person?.display_name || "UEW member"}</strong><span>@{person?.username || "member"}</span></div></div><div className="connection-actions"><button className="primary-button" disabled={connectionBusy} onClick={() => void respondToConnection(row.id,"accepted")}>Accept</button><button className="profile-edit-button" disabled={connectionBusy} onClick={() => void respondToConnection(row.id,"declined")}>Decline</button></div></article>; })}
+                {!connectionRows.some((row) => row.status === "pending" && row.recipient_id === user?.id) && <div className="empty card"><p>No new connection requests.</p></div>}
+              </section>
+              <section className="connections-section"><div className="discover-results-heading"><h2>Your connections</h2><span>Accepted members</span></div>
+                {connectionRows.filter((row) => row.status === "accepted").map((row) => { const peerId = row.requester_id === user?.id ? row.recipient_id : row.requester_id; const person = connectionProfiles[peerId]; return <article className="connection-row card" key={row.id}><div className="connection-person">{avatarUrls[peerId] ? <img className="discover-avatar" src={avatarUrls[peerId]} alt=""/> : <div className="discover-avatar discover-avatar-fallback">{person ? initials(person.display_name) : "UEW"}</div>}<div className="discover-person-copy"><strong>{person?.display_name || "UEW member"}</strong><span>@{person?.username || "member"}</span></div></div><button className="profile-edit-button" onClick={() => person && void startDirectConversation(person)} disabled={!person || messageBusy}>Message</button></article>; })}
+                {!connectionRows.some((row) => row.status === "accepted") && <div className="empty card"><p>Your accepted connections will appear here.</p><button className="primary-button" onClick={() => setActiveView("discover")}>Discover members</button></div>}
+              </section>
+              <section className="connections-section"><div className="discover-results-heading"><h2>Requests you've sent</h2><span>Awaiting a response</span></div>
+                {connectionRows.filter((row) => row.status === "pending" && row.requester_id === user?.id).map((row) => <article className="connection-row card" key={row.id}><div className="connection-person"><div className="discover-avatar discover-avatar-fallback">UEW</div><div className="discover-person-copy"><strong>{connectionProfiles[row.recipient_id]?.display_name || "UEW member"}</strong><span>@{connectionProfiles[row.recipient_id]?.username || "member"}</span></div></div><span className="connection-pending">Pending</span></article>)}
+                {!connectionRows.some((row) => row.status === "pending" && row.requester_id === user?.id) && <div className="empty card"><p>You haven't sent any requests yet.</p></div>}
+              </section>
             </div>
             <div className={activeView === "groups" ? "view-content" : "view-content hidden"}>
               {activeGroup ? (
