@@ -12,6 +12,8 @@ type Listing = {
   created_at: string; image_path: string | null;
 };
 type Seller = { user_id: string; display_name: string; username: string };
+type PurchaseRequest = { id:string; listing_id:string; buyer_id:string; seller_id:string; status:"pending"|"confirmed"|"declined" };
+type Review = { id:string; listing_id:string; seller_id:string; buyer_id:string; rating:number; review_text:string };
 
 const categories = ["All categories","Books","Electronics","Fashion","Furniture","Accommodation","Other"];
 const money = (amount: number) => new Intl.NumberFormat("en-GH",{style:"currency",currency:"GHS",maximumFractionDigits:2}).format(amount);
@@ -31,6 +33,9 @@ export default function MarketplacePage() {
   const [imageUrls,setImageUrls] = useState<Record<string,string>>({});
   const [savedIds,setSavedIds] = useState<string[]>([]);
   const [savedOnly,setSavedOnly] = useState(false);
+  const [purchaseRequests,setPurchaseRequests] = useState<PurchaseRequest[]>([]);
+  const [reviews,setReviews] = useState<Review[]>([]);
+  const [reviewDraft,setReviewDraft] = useState<{requestId:string;listingId:string;sellerId:string;rating:number;text:string}|null>(null);
   const [form,setForm] = useState({title:"",description:"",category:"Books",price:"",item_condition:"Good",location:"UEW Campus"});
 
   useEffect(() => {
@@ -56,7 +61,14 @@ export default function MarketplacePage() {
     setSavedIds((savedRows ?? []).map((row:{listing_id:string})=>row.listing_id));
     const signedImages=await Promise.all(rows.filter(row=>row.image_path).map(async row=>{ const {data:result}=await supabase.storage.from("marketplace-images").createSignedUrl(row.image_path as string,3600); return result?.signedUrl ? [row.id,result.signedUrl] as const : null; }));
     setImageUrls(Object.fromEntries(signedImages.filter((item)=>item!==null) as Array<readonly [string,string]>));
-    const ids=[...new Set(rows.map(row=>row.seller_id))];
+    const [{data:requestRows},{data:reviewRows}]=await Promise.all([
+      supabase.from("marketplace_purchase_requests").select("id,listing_id,buyer_id,seller_id,status").or("buyer_id.eq."+user.id+",seller_id.eq."+user.id),
+      supabase.from("marketplace_reviews").select("id,listing_id,seller_id,buyer_id,rating,review_text").in("listing_id",rows.length?rows.map(row=>row.id):["00000000-0000-0000-0000-000000000000"])
+    ]);
+    const requests=(requestRows ?? []) as PurchaseRequest[];
+    setPurchaseRequests(requests);
+    setReviews((reviewRows ?? []) as Review[]);
+    const ids=[...new Set([...rows.map(row=>row.seller_id),...requests.map(row=>row.buyer_id)])];
     if (ids.length) {
       const {data:people}=await supabase.from("profiles").select("user_id,display_name,username").in("user_id",ids);
       setSellers(Object.fromEntries(((people ?? []) as Seller[]).map(person=>[person.user_id,person])));
@@ -111,10 +123,36 @@ export default function MarketplacePage() {
     finally { setBusy(false); }
   }
 
-  async function updateStatus(id:string,status:"sold") {
+  async function requestPurchase(listing:Listing) {
+    if (!supabase || !user) return;
+    setBusy(true); setNotice("");
+    const {error}=await supabase.from("marketplace_purchase_requests").insert({listing_id:listing.id,buyer_id:user.id,seller_id:listing.seller_id});
+    if (error) setNotice(error.code==="23505"?"You have already sent a request for this item.":error.message);
+    else { setNotice("Purchase request sent. The seller must confirm the transaction before you can leave a review."); await loadListings(); }
+    setBusy(false);
+  }
+
+  async function confirmPurchase(requestId:string) {
     if (!supabase) return;
-    const {error}=await supabase.from("marketplace_listings").update({status,updated_at:new Date().toISOString()}).eq("id",id).eq("seller_id",user?.id);
-    if (error) setNotice(error.message); else { setNotice("Listing marked as sold."); await loadListings(); }
+    setBusy(true); setNotice("");
+    const {error}=await supabase.rpc("confirm_marketplace_purchase",{request_id:requestId});
+    if (error) setNotice(error.message);
+    else { setNotice("Purchase confirmed. The buyer can now leave a seller review."); await loadListings(); }
+    setBusy(false);
+  }
+
+  async function submitReview(event:FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!supabase || !user || !reviewDraft) return;
+    setBusy(true); setNotice("");
+    const {error}=await supabase.from("marketplace_reviews").insert({
+      purchase_request_id:reviewDraft.requestId,listing_id:reviewDraft.listingId,
+      buyer_id:user.id,seller_id:reviewDraft.sellerId,rating:reviewDraft.rating,
+      review_text:reviewDraft.text.trim()
+    });
+    if (error) setNotice(error.code==="23505"?"You have already reviewed this purchase.":error.message);
+    else { setNotice("Thank you. Your seller review has been published."); setReviewDraft(null); await loadListings(); }
+    setBusy(false);
   }
 
   const visible=listings.filter(item=>(!savedOnly || savedIds.includes(item.id)) && (category==="All categories" || item.category===category)
@@ -137,6 +175,12 @@ export default function MarketplacePage() {
           <label>Pickup location<input required maxLength={100} value={form.location} onChange={e=>setForm({...form,location:e.target.value})}/></label></div>
         <button className="market-primary" disabled={busy}>{busy?"Publishing…":"Publish listing"}</button>
       </form>}
+      {reviewDraft && <form className="market-form" onSubmit={submitReview}>
+        <div className="market-form-heading"><h2>Review your purchase</h2><button type="button" onClick={()=>setReviewDraft(null)}>Close</button></div>
+        <label>Seller rating<select value={reviewDraft.rating} onChange={event=>setReviewDraft({...reviewDraft,rating:Number(event.target.value)})}>{[5,4,3,2,1].map(value=><option key={value} value={value}>{value} out of 5 stars</option>)}</select></label>
+        <label>Your experience (optional)<textarea rows={3} maxLength={1000} value={reviewDraft.text} onChange={event=>setReviewDraft({...reviewDraft,text:event.target.value})} placeholder="Share helpful details about the transaction."/></label>
+        <button className="market-primary" disabled={busy}>{busy?"Submitting…":"Publish review"}</button>
+      </form>}
       <section className="market-tools"><input aria-label="Search listings" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search books, electronics, furniture…"/><select aria-label="Filter category" value={category} onChange={e=>setCategory(e.target.value)}>{categories.map(value=><option key={value}>{value}</option>)}</select><button type="button" className={savedOnly?"market-filter-active":"market-filter-button"} onClick={()=>setSavedOnly(value=>!value)}>♥ {savedOnly?"Showing saved":"Saved items"} ({savedIds.length})</button></section>
       <div className="market-results-heading"><h2>Campus listings</h2><span>{visible.length} items</span></div>
       {visible.length ? <section className="market-grid">{visible.map(item=><article className="market-card" key={item.id}>
@@ -145,8 +189,18 @@ export default function MarketplacePage() {
         <div className="market-title-row"><h3>{item.title}</h3><button type="button" className={savedIds.includes(item.id)?"market-save-button saved":"market-save-button"} aria-label={savedIds.includes(item.id)?"Remove saved listing":"Save listing"} title={savedIds.includes(item.id)?"Remove saved listing":"Save listing"} onClick={()=>void toggleSaved(item.id)}>♥</button></div><strong className="market-price">{money(Number(item.price))}</strong><p>{item.description}</p>
         <div className="market-item-meta"><span>◷ {item.item_condition}</span><span>⌖ {item.location}</span></div>
         <div className="market-seller"><span className="market-avatar">{(sellers[item.seller_id]?.display_name || "U").slice(0,1).toUpperCase()}</span><div><strong>{sellers[item.seller_id]?.display_name || "UEW member"}</strong><small>@{sellers[item.seller_id]?.username || "member"}</small></div></div>
-        {item.seller_id===user.id ? <button className="market-outline" disabled={item.status==="sold"} onClick={()=>void updateStatus(item.id,"sold")}>{item.status==="sold"?"Marked sold":"Mark as sold"}</button>
-          : <button className="market-outline" disabled={item.status==="sold" || busy} onClick={()=>void contactSeller(item.seller_id)}>{item.status==="sold"?"Item sold":"Message seller"}</button>}
+        <div className="market-rating-summary">
+          <strong>{(()=>{const own=reviews.filter(review=>review.seller_id===item.seller_id);return own.length?"★ "+(own.reduce((sum,review)=>sum+review.rating,0)/own.length).toFixed(1)+" · "+own.length+" review"+(own.length===1?"":"s"):"No seller reviews yet";})()}</strong>
+          {reviews.filter(review=>review.listing_id===item.id).slice(0,2).map(review=><p key={review.id}>{"★".repeat(review.rating)}{"☆".repeat(5-review.rating)} <span>{review.review_text || "Buyer left a rating."}</span></p>)}
+        </div>
+        {item.seller_id===user.id ? <>
+          {purchaseRequests.filter(request=>request.listing_id===item.id && request.status==="pending").map(request=><div className="market-request-row" key={request.id}><span>Purchase request from {sellers[request.buyer_id]?.display_name || "UEW buyer"}</span><button className="market-outline" disabled={busy || item.status==="sold"} onClick={()=>void confirmPurchase(request.id)}>Confirm sale</button></div>)}
+          <button className="market-outline" disabled={item.status==="sold"} onClick={()=>setNotice("To collect a verified buyer review, ask the buyer to send a purchase request and confirm it here. This keeps reviews tied to completed campus transactions.")}>{item.status==="sold"?"Marked sold":"How to confirm a sale"}</button>
+        </> : <>
+          <button className="market-outline" disabled={item.status==="sold" || busy || purchaseRequests.some(request=>request.listing_id===item.id && request.buyer_id===user.id)} onClick={()=>void requestPurchase(item)}>{purchaseRequests.some(request=>request.listing_id===item.id && request.buyer_id===user.id)?"Request sent":item.status==="sold"?"Item sold":"I want to buy this"}</button>
+          <button className="market-outline" disabled={busy} onClick={()=>void contactSeller(item.seller_id)}>Message seller</button>
+          {purchaseRequests.filter(request=>request.listing_id===item.id && request.buyer_id===user.id && request.status==="confirmed" && !reviews.some(review=>review.buyer_id===user.id && review.listing_id===item.id)).map(request=><button key={request.id} className="market-outline" onClick={()=>setReviewDraft({requestId:request.id,listingId:item.id,sellerId:item.seller_id,rating:5,text:""})}>Rate this seller</button>)}
+        </>}
       </article>)}</section> : <section className="market-empty"><h3>No listings found</h3><p>Try another search or category, or be the first to list an item.</p></section>}
     </>}
     <footer className="market-footer">CampusConnect · University of Education, Winneba</footer>
