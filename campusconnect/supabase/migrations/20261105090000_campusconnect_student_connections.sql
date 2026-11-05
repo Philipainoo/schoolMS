@@ -57,3 +57,7 @@ for delete to authenticated using (
   (requester_id = (select auth.uid()) and status = 'pending')
   or (status = 'accepted' and (select auth.uid()) in (requester_id, recipient_id))
 );
+
+-- Limit recipient updates to the response fields; identity and tenant columns remain immutable.
+revoke update on public.campus_connections from authenticated;
+grant update (status, updated_at) on public.campus_connections to authenticated;
