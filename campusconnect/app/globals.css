@@ -46,3 +46,7 @@
 .notification-item-copy>span{font-size:10px;color:#5e6b62;line-height:1.5}
 .notification-item-copy time{font-size:8px;color:#98a39c}
 @media(max-width:700px){.topbar-actions{gap:7px}.notification-trigger{padding:7px 9px;font-size:9px}.notification-popover{right:-52px}}
+
+
+/* Official University of Education, Winneba brand mark */
+.brand-logo{display:block;width:48px;height:47px;object-fit:contain;flex:none}.brand-logo-large{width:76px;height:75px;margin:0 auto 12px}.brand{gap:12px}.brand>span:last-child{line-height:1.08}
