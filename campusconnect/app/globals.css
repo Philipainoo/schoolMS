@@ -50,3 +50,26 @@
 
 /* Official University of Education, Winneba brand mark */
 .brand-logo{display:block;width:48px;height:47px;object-fit:contain;flex:none}.brand-logo-large{width:76px;height:75px;margin:0 auto 12px}.brand{gap:12px}.brand>span:last-child{line-height:1.08}
+
+
+/* Personalized UEW dashboard overview */
+.dashboard-welcome{position:relative;isolation:isolate;overflow:hidden;display:flex;align-items:center;justify-content:space-between;gap:20px;min-height:190px;padding:27px 30px;border-radius:17px;background:linear-gradient(115deg,#123f2c 0%,#17613c 58%,#24774b 100%);color:#fff;box-shadow:0 12px 28px #153e281c}
+.dashboard-welcome-copy{position:relative;z-index:1;max-width:510px}
+.dashboard-kicker{font-size:9px;font-weight:800;letter-spacing:1.7px;color:#c5e4c9}
+.dashboard-welcome h1{font:800 clamp(22px,3vw,30px)/1.2 Manrope,sans-serif;letter-spacing:-1px;margin:10px 0 7px;color:#fff}
+.dashboard-welcome p{max-width:440px;font-size:11px;line-height:1.7;color:#e0eee2;margin:0}
+.dashboard-welcome-actions{display:flex;align-items:center;gap:9px;margin-top:17px}
+.dashboard-welcome-actions button{border:1px solid #ffffff35;border-radius:8px;background:#fff;color:#174b31;padding:9px 12px;font:700 10px Manrope;cursor:pointer}
+.dashboard-welcome-actions button span{margin-left:8px}
+.dashboard-welcome-actions .dashboard-secondary-action{background:#ffffff12;color:#fff;border-color:#ffffff55}
+.dashboard-crest{position:absolute;z-index:0;right:26px;top:50%;transform:translateY(-50%);width:118px;height:116px;object-fit:contain;opacity:.16;filter:grayscale(1) brightness(0) invert(1)}
+.dashboard-quick-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:13px 0 18px}
+.dashboard-stat-card{display:flex;align-items:center;gap:10px;min-width:0;padding:13px 12px;border:1px solid var(--line);border-radius:12px;background:#fff;text-align:left;cursor:pointer;transition:border-color .18s,transform .18s}
+.dashboard-stat-card:hover{border-color:#b8d2bc;transform:translateY(-2px)}
+.dashboard-stat-icon{display:grid;place-items:center;width:32px;height:32px;flex:none;border-radius:10px;background:#edf5ed;color:var(--green);font-size:16px}
+.dashboard-stat-copy{display:grid;gap:3px;min-width:0}
+.dashboard-stat-copy strong{font:800 17px/1 Manrope;color:var(--ink)}
+.dashboard-stat-copy small{font-size:9px;color:var(--muted);white-space:nowrap}
+.dashboard-stat-arrow{margin-left:auto;color:#93a397;font-size:12px}
+@media(max-width:900px){.dashboard-quick-stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:560px){.dashboard-welcome{min-height:180px;padding:22px 19px}.dashboard-welcome h1{font-size:23px}.dashboard-crest{right:8px;width:85px;height:84px;opacity:.1}.dashboard-welcome-copy{max-width:100%}.dashboard-welcome p{max-width:290px}.dashboard-quick-stats{gap:8px}.dashboard-stat-card{padding:11px 9px;gap:8px}.dashboard-stat-copy small{font-size:8px}.dashboard-stat-icon{width:29px;height:29px}}
