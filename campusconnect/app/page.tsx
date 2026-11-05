@@ -556,7 +556,10 @@ export default function Home() {
       if (error) setNotice(error.message);
       else setNotifications((current) => current.map((entry) => entry.id === item.id ? { ...entry, read_at: readAt } : entry));
     }
-    if (item.entity_type === "message") {
+    if (item.entity_type === "connections") {
+      setActiveView("connections");
+      await loadConnections();
+    } else if (item.entity_type === "message") {
       setActiveView("messages");
       await loadConversations();
     } else if (item.entity_type === "group") {
