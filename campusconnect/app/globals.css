@@ -98,3 +98,18 @@
 .discover-bio{font-size:10px;line-height:1.65;color:var(--muted);min-height:34px;margin:0 0 13px;overflow-wrap:anywhere}
 .discover-message{width:100%;display:flex;justify-content:center;gap:7px}
 @media(max-width:700px){.discover-grid{grid-template-columns:1fr}.discover-search-row{flex-direction:column}.discover-search-row .primary-button{justify-content:center}}
+
+
+/* Student connections and requests */
+.connection-summary-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:11px;margin:16px 0 24px}
+.connection-summary{display:grid;gap:5px;padding:15px}
+.connection-summary strong{font:800 23px Manrope;color:var(--green)}
+.connection-summary span{font-size:10px;color:var(--muted)}
+.connections-section{margin:0 0 24px}
+.connection-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 15px;margin:8px 0}
+.connection-person{display:flex;align-items:center;gap:10px;min-width:0}
+.connection-actions,.discover-card-actions{display:flex;align-items:center;gap:8px}
+.connection-actions button,.discover-card-actions button{font-size:10px;padding:8px 12px}
+.connection-pending{font-size:10px;color:#8a6b2d;background:#faf4e4;border-radius:20px;padding:7px 10px}
+.discover-card-actions .discover-message{flex:1}
+@media(max-width:600px){.connection-summary-grid{gap:7px}.connection-summary{padding:11px}.connection-summary strong{font-size:19px}.connection-summary span{font-size:9px}.connection-row{align-items:flex-start;flex-wrap:wrap}.connection-actions{width:100%}.connection-actions button{flex:1}}
