@@ -29,6 +29,8 @@ export default function MarketplacePage() {
   const [notice,setNotice] = useState("");
   const [imageFile,setImageFile] = useState<File|null>(null);
   const [imageUrls,setImageUrls] = useState<Record<string,string>>({});
+  const [savedIds,setSavedIds] = useState<string[]>([]);
+  const [savedOnly,setSavedOnly] = useState(false);
   const [form,setForm] = useState({title:"",description:"",category:"Books",price:"",item_condition:"Good",location:"UEW Campus"});
 
   useEffect(() => {
@@ -50,6 +52,8 @@ export default function MarketplacePage() {
     if (error) { setNotice(error.message); return; }
     const rows=(data ?? []) as Listing[];
     setListings(rows);
+    const {data:savedRows}=await supabase.from("marketplace_listing_saves").select("listing_id").eq("user_id",user.id);
+    setSavedIds((savedRows ?? []).map((row:{listing_id:string})=>row.listing_id));
     const signedImages=await Promise.all(rows.filter(row=>row.image_path).map(async row=>{ const {data:result}=await supabase.storage.from("marketplace-images").createSignedUrl(row.image_path as string,3600); return result?.signedUrl ? [row.id,result.signedUrl] as const : null; }));
     setImageUrls(Object.fromEntries(signedImages.filter((item)=>item!==null) as Array<readonly [string,string]>));
     const ids=[...new Set(rows.map(row=>row.seller_id))];
@@ -88,6 +92,14 @@ export default function MarketplacePage() {
     finally { setBusy(false); }
   }
 
+  async function toggleSaved(listingId:string) {
+    if (!supabase || !user) return;
+    const isSaved=savedIds.includes(listingId);
+    const {error}=isSaved ? await supabase.from("marketplace_listing_saves").delete().eq("user_id",user.id).eq("listing_id",listingId) : await supabase.from("marketplace_listing_saves").insert({user_id:user.id,listing_id:listingId});
+    if (error) { setNotice(error.message); return; }
+    setSavedIds(current=>isSaved?current.filter(id=>id!==listingId):[...current,listingId]);
+  }
+
   async function contactSeller(sellerId:string) {
     if (!supabase) return;
     setBusy(true); setNotice("");
@@ -105,7 +117,7 @@ export default function MarketplacePage() {
     if (error) setNotice(error.message); else { setNotice("Listing marked as sold."); await loadListings(); }
   }
 
-  const visible=listings.filter(item=>(category==="All categories" || item.category===category)
+  const visible=listings.filter(item=>(!savedOnly || savedIds.includes(item.id)) && (category==="All categories" || item.category===category)
     && (item.title+" "+item.description+" "+item.location).toLowerCase().includes(search.toLowerCase()));
   if (!user) return <main className="market-shell"><header className="market-header"><Link href="/">CampusConnect</Link></header><section className="market-empty"><h1>UEW Marketplace</h1><p>Sign in to your verified UEW account to browse campus listings.</p><Link href="/">Go to sign in</Link></section></main>;
 
@@ -125,12 +137,12 @@ export default function MarketplacePage() {
           <label>Pickup location<input required maxLength={100} value={form.location} onChange={e=>setForm({...form,location:e.target.value})}/></label></div>
         <button className="market-primary" disabled={busy}>{busy?"Publishing…":"Publish listing"}</button>
       </form>}
-      <section className="market-tools"><input aria-label="Search listings" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search books, electronics, furniture…"/><select aria-label="Filter category" value={category} onChange={e=>setCategory(e.target.value)}>{categories.map(value=><option key={value}>{value}</option>)}</select></section>
+      <section className="market-tools"><input aria-label="Search listings" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search books, electronics, furniture…"/><select aria-label="Filter category" value={category} onChange={e=>setCategory(e.target.value)}>{categories.map(value=><option key={value}>{value}</option>)}</select><button type="button" className={savedOnly?"market-filter-active":"market-filter-button"} onClick={()=>setSavedOnly(value=>!value)}>♥ {savedOnly?"Showing saved":"Saved items"} ({savedIds.length})</button></section>
       <div className="market-results-heading"><h2>Campus listings</h2><span>{visible.length} items</span></div>
       {visible.length ? <section className="market-grid">{visible.map(item=><article className="market-card" key={item.id}>
         <div className="market-card-top"><span>{item.category}</span><span className={item.status==="sold"?"market-sold":"market-available"}>{item.status==="sold"?"SOLD":"AVAILABLE"}</span></div>
         {imageUrls[item.id] && <img className="market-listing-image" src={imageUrls[item.id]} alt={item.title} />}
-        <h3>{item.title}</h3><strong className="market-price">{money(Number(item.price))}</strong><p>{item.description}</p>
+        <div className="market-title-row"><h3>{item.title}</h3><button type="button" className={savedIds.includes(item.id)?"market-save-button saved":"market-save-button"} aria-label={savedIds.includes(item.id)?"Remove saved listing":"Save listing"} title={savedIds.includes(item.id)?"Remove saved listing":"Save listing"} onClick={()=>void toggleSaved(item.id)}>♥</button></div><strong className="market-price">{money(Number(item.price))}</strong><p>{item.description}</p>
         <div className="market-item-meta"><span>◷ {item.item_condition}</span><span>⌖ {item.location}</span></div>
         <div className="market-seller"><span className="market-avatar">{(sellers[item.seller_id]?.display_name || "U").slice(0,1).toUpperCase()}</span><div><strong>{sellers[item.seller_id]?.display_name || "UEW member"}</strong><small>@{sellers[item.seller_id]?.username || "member"}</small></div></div>
         {item.seller_id===user.id ? <button className="market-outline" disabled={item.status==="sold"} onClick={()=>void updateStatus(item.id,"sold")}>{item.status==="sold"?"Marked sold":"Mark as sold"}</button>
