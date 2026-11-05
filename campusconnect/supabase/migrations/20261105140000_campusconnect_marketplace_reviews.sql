@@ -26,7 +26,7 @@ for insert to authenticated with check (
   and (select private.is_verified_institution_user(buyer_id,(select private.current_institution_id())))
   and exists (
     select 1 from public.marketplace_listings l
-    where l.id=listing_id and l.seller_id=seller_id
+    where l.id=marketplace_purchase_requests.listing_id and l.seller_id=marketplace_purchase_requests.seller_id
       and l.institution_id=(select private.current_institution_id())
       and l.status='active' and l.seller_id<>buyer_id
   )
@@ -50,7 +50,7 @@ grant select,insert on public.marketplace_reviews to authenticated;
 create policy marketplace_reviews_read_verified on public.marketplace_reviews
 for select to authenticated using (
   (select private.is_verified_institution_user((select auth.uid()),(select private.current_institution_id())))
-  and exists (select 1 from public.marketplace_listings l where l.id=listing_id and l.institution_id=(select private.current_institution_id()))
+  and exists (select 1 from public.marketplace_listings l where l.id=marketplace_reviews.listing_id and l.institution_id=(select private.current_institution_id()))
 );
 create policy marketplace_reviews_create_confirmed_buyer on public.marketplace_reviews
 for insert to authenticated with check (
@@ -59,8 +59,8 @@ for insert to authenticated with check (
   and exists (
     select 1 from public.marketplace_purchase_requests p
     join public.marketplace_listings l on l.id=p.listing_id
-    where p.id=purchase_request_id and p.listing_id=listing_id
-      and p.buyer_id=buyer_id and p.seller_id=seller_id
+    where p.id=marketplace_reviews.purchase_request_id and p.listing_id=marketplace_reviews.listing_id
+      and p.buyer_id=marketplace_reviews.buyer_id and p.seller_id=marketplace_reviews.seller_id
       and p.status='confirmed' and l.status='sold'
       and l.institution_id=(select private.current_institution_id())
   )
