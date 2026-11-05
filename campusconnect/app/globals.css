@@ -152,3 +152,13 @@
 .market-save-button{flex:0 0 31px;width:31px;height:31px;border:1px solid #d8e3d8;border-radius:50%;background:#fff;color:#849287;font-size:15px;cursor:pointer}
 .market-save-button.saved{background:#e9f4ea;border-color:#a9c9ad;color:#17613c}
 @media(max-width:700px){.market-tools{grid-template-columns:1fr}.market-tools>*{width:100%}}
+
+
+/* Marketplace seller ratings and purchase confirmations */
+.market-rating-summary{display:grid;gap:6px;padding:10px 0;border-top:1px solid var(--line);margin-top:10px}
+.market-rating-summary>strong{font:700 10px Manrope;color:#956b20}
+.market-rating-summary p{margin:0;font-size:9px;line-height:1.55;color:#956b20;overflow-wrap:anywhere}
+.market-rating-summary p span{color:#657268;margin-left:4px}
+.market-request-row{display:grid;gap:7px;padding:10px;margin:8px 0;border:1px solid #dce9dc;border-radius:9px;background:#f7faf6}
+.market-request-row>span{font-size:10px;color:#536458}
+.market-request-row .market-outline{background:#edf5ed}
