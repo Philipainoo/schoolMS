@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import type { ChangeEvent } from "react";
 import { getSupabase } from "@/lib/supabase";
@@ -878,12 +879,12 @@ export default function Home() {
   const visiblePosts = posts.filter((post) => filter === "all" || post.channel === filter);
   const initials = (name: string) => name.split(" ").map((part) => part[0]).slice(0, 2).join("").toUpperCase();
 
-  if (!supabase) return <main className="setup"><div className="setup-card"><span className="brand-mark">C</span><h1>CampusConnect</h1><p>Connect your Supabase project to launch the UEW campus community.</p><code>cp .env.example .env.local</code><p className="muted">Then add your Supabase public key and restart the development server.</p></div></main>;
+  if (!supabase) return <main className="setup"><div className="setup-card"><Image src="/uew-logo.svg" alt="University of Education, Winneba crest" width={76} height={75} className="brand-logo brand-logo-large" /><h1>CampusConnect</h1><p>Connect your Supabase project to launch the UEW campus community.</p><code>cp .env.example .env.local</code><p className="muted">Then add your Supabase public key and restart the development server.</p></div></main>;
 
   return (
     <main className="shell">
       <header className="topbar">
-        <a className="brand" href="#"><span className="brand-mark">C</span><span>Campus<span className="brand-accent">Connect</span><small>UEW COMMUNITY</small></span></a>
+        <a className="brand" href="#" aria-label="CampusConnect UEW home"><Image src="/uew-logo.svg" alt="University of Education, Winneba crest" width={48} height={47} className="brand-logo" /><span>Campus<span className="brand-accent">Connect</span><small>UEW COMMUNITY</small></span></a>
         {user ? <div className="topbar-actions">
           {verificationStatus === "verified" && <div className="notification-menu-wrap">
             <button type="button" className="notification-trigger" onClick={() => setNotificationOpen((open) => !open)} aria-expanded={notificationOpen}>
