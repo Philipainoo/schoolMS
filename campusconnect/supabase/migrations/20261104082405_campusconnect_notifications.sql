@@ -114,3 +114,27 @@ begin
   end if;
 end;
 $$;
+
+-- Extend the private inbox to cover accepted student connections.
+alter table public.notifications drop constraint if exists notifications_notification_type_check;
+alter table public.notifications add constraint notifications_notification_type_check
+  check (notification_type in ('comment','direct_message','group_invite','connection_accepted'));
+alter table public.notifications drop constraint if exists notifications_entity_type_check;
+alter table public.notifications add constraint notifications_entity_type_check
+  check (entity_type in ('post','message','group','connections'));
+
+create or replace function private.notify_connection_accepted()
+returns trigger language plpgsql security definer set search_path = ''
+as $$
+begin
+  if old.status is distinct from 'accepted' and new.status = 'accepted' then
+    insert into public.notifications (institution_id, recipient_id, actor_id, notification_type, entity_type, entity_id, message)
+    values (new.institution_id, new.requester_id, new.recipient_id, 'connection_accepted', 'connections', new.id, 'accepted your connection request');
+  end if;
+  return new;
+end;
+$$;
+revoke all on function private.notify_connection_accepted() from public, anon, authenticated;
+drop trigger if exists campusconnect_notify_connection_accepted on public.campus_connections;
+create trigger campusconnect_notify_connection_accepted after update of status on public.campus_connections
+for each row execute function private.notify_connection_accepted();
