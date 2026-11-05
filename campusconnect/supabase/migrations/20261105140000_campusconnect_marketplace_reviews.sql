@@ -80,7 +80,8 @@ begin
   end if;
   if v_request.status <> 'pending' then raise exception 'This request has already been handled'; end if;
   update public.marketplace_listings set status='sold',updated_at=now()
-    where id=v_request.listing_id and seller_id=(select auth.uid())\n      and institution_id=(select private.current_institution_id()) and status='active';
+    where id=v_request.listing_id and seller_id=(select auth.uid())
+      and institution_id=(select private.current_institution_id()) and status='active';
   if not found then raise exception 'This listing is no longer available'; end if;
   update public.marketplace_purchase_requests set status='confirmed',updated_at=now()
     where id=request_id;
