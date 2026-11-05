@@ -17,7 +17,7 @@ type DirectMessage = { id: string; conversation_id: string; sender_id: string; b
 type ConversationSummary = { id: string; created_at: string; peer: Profile | null; lastMessage: DirectMessage | null };
 type CampusEvent = { id: string; title: string; description: string | null; starts_at: string; ends_at: string | null; location: string; organizer_id: string };
 type CampusAnnouncement = { id: string; title: string; content: string; priority: "normal" | "high"; published_at: string; author_id: string };
-type CampusNotification = { id: string; actor_id: string | null; notification_type: "comment" | "direct_message" | "group_invite"; entity_type: "post" | "message" | "group"; entity_id: string; message: string; created_at: string; read_at: string | null };
+type CampusNotification = { id: string; actor_id: string | null; notification_type: "comment" | "direct_message" | "group_invite" | "connection_accepted"; entity_type: "post" | "message" | "group" | "connections"; entity_id: string; message: string; created_at: string; read_at: string | null };
 
 const channels = [
   { id: "campus", label: "Campus life" },
@@ -537,6 +537,16 @@ export default function Home() {
     }
   }
 
+  async function markAllNotificationsRead() {
+    if (!supabase || !user) return;
+    const unreadIds = notifications.filter((item) => !item.read_at).map((item) => item.id);
+    if (!unreadIds.length) return;
+    const readAt = new Date().toISOString();
+    const { error } = await supabase.from("notifications").update({ read_at: readAt }).in("id", unreadIds);
+    if (error) { setNotice(error.message); return; }
+    setNotifications((current) => current.map((item) => item.read_at ? item : { ...item, read_at: readAt }));
+  }
+
   async function openNotification(item: CampusNotification) {
     if (!supabase) return;
     setNotificationOpen(false);
@@ -985,8 +995,8 @@ export default function Home() {
               {notifications.some((item) => !item.read_at) && <b>{notifications.filter((item) => !item.read_at).length}</b>}
             </button>
             {notificationOpen && <div className="notification-popover">
-              <div className="notification-popover-heading"><strong>Notifications</strong><button type="button" onClick={() => setNotificationOpen(false)}>Close</button></div>
-              {notifications.length === 0 ? <p className="notification-empty">You’re all caught up. New comments, messages and community invitations will appear here.</p> : <div className="notification-list">
+              <div className="notification-popover-heading"><strong>Notifications <small>{notifications.filter((item) => !item.read_at).length} unread</small></strong><span className="notification-heading-actions"><button type="button" onClick={() => void markAllNotificationsRead()} disabled={!notifications.some((item) => !item.read_at)}>Mark all read</button><button type="button" onClick={() => setNotificationOpen(false)}>Close</button></span></div>
+              {notifications.length === 0 ? <p className="notification-empty">You’re all caught up. Connection updates, comments, messages and community invitations will appear here.</p> : <div className="notification-list">
                 {notifications.map((item) => <button type="button" key={item.id} className={item.read_at ? "notification-item" : "notification-item unread"} onClick={() => void openNotification(item)}>
                   <span className="notification-dot" aria-hidden="true"/>
                   <span className="notification-item-copy"><strong>{item.actor_id ? profiles[item.actor_id]?.display_name || "A UEW member" : "CampusConnect"}</strong><span>{item.message}</span><time>{new Date(item.created_at).toLocaleString("en-GH", { dateStyle: "medium", timeStyle: "short", timeZone: "Africa/Accra" })}</time></span>
