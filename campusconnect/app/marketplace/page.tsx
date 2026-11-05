@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import type { ChangeEvent } from "react";
 import Link from "next/link";
 import { getSupabase } from "@/lib/supabase";
 import type { User } from "@supabase/supabase-js";
@@ -8,7 +9,7 @@ import type { User } from "@supabase/supabase-js";
 type Listing = {
   id: string; seller_id: string; title: string; description: string; category: string;
   price: number; item_condition: string; location: string; status: "active" | "sold";
-  created_at: string;
+  created_at: string; image_path: string | null;
 };
 type Seller = { user_id: string; display_name: string; username: string };
 
@@ -26,6 +27,8 @@ export default function MarketplacePage() {
   const [showForm,setShowForm] = useState(false);
   const [busy,setBusy] = useState(false);
   const [notice,setNotice] = useState("");
+  const [imageFile,setImageFile] = useState<File|null>(null);
+  const [imageUrls,setImageUrls] = useState<Record<string,string>>({});
   const [form,setForm] = useState({title:"",description:"",category:"Books",price:"",item_condition:"Good",location:"UEW Campus"});
 
   useEffect(() => {
@@ -41,12 +44,14 @@ export default function MarketplacePage() {
     if (accountError || account?.verification_status !== "verified") { setVerified(false); setNotice("A verified UEW account is required to use the Marketplace."); return; }
     setVerified(true);
     const {data,error}=await supabase.from("marketplace_listings")
-      .select("id,seller_id,title,description,category,price,item_condition,location,status,created_at")
+      .select("id,seller_id,title,description,category,price,item_condition,location,status,created_at,image_path")
       .eq("institution_id",account.institution_id).neq("status","removed")
       .order("created_at",{ascending:false}).limit(100);
     if (error) { setNotice(error.message); return; }
     const rows=(data ?? []) as Listing[];
     setListings(rows);
+    const signedImages=await Promise.all(rows.filter(row=>row.image_path).map(async row=>{ const {data:result}=await supabase.storage.from("marketplace-images").createSignedUrl(row.image_path as string,3600); return result?.signedUrl ? [row.id,result.signedUrl] as const : null; }));
+    setImageUrls(Object.fromEntries(signedImages.filter((item)=>item!==null) as Array<readonly [string,string]>));
     const ids=[...new Set(rows.map(row=>row.seller_id))];
     if (ids.length) {
       const {data:people}=await supabase.from("profiles").select("user_id,display_name,username").in("user_id",ids);
@@ -63,11 +68,20 @@ export default function MarketplacePage() {
     try {
       const {data:account,error:accountError}=await supabase.from("users").select("verification_status,institution_id").eq("id",user.id).single();
       if (accountError || account?.verification_status !== "verified") throw new Error("Only verified UEW members can publish listings.");
-      const {error}=await supabase.from("marketplace_listings").insert({
+      const {data:listing,error}=await supabase.from("marketplace_listings").insert({
         institution_id:account.institution_id,seller_id:user.id,title:form.title.trim(),description:form.description.trim(),
         category:form.category,price:Number(form.price),item_condition:form.item_condition,location:form.location.trim()
-      });
+      }).select("id").single();
       if (error) throw error;
+      if (imageFile && listing) {
+        const extension=imageFile.name.split(".").pop()?.toLowerCase() || "jpg";
+        const imagePath=user.id+"/"+listing.id+"."+extension;
+        const {error:uploadError}=await supabase.storage.from("marketplace-images").upload(imagePath,imageFile,{contentType:imageFile.type,upsert:true});
+        if (uploadError) { await supabase.from("marketplace_listings").delete().eq("id",listing.id).eq("seller_id",user.id); throw uploadError; }
+        const {error:updateError}=await supabase.from("marketplace_listings").update({image_path:imagePath}).eq("id",listing.id).eq("seller_id",user.id);
+        if (updateError) throw updateError;
+      }
+      setImageFile(null);
       setForm({title:"",description:"",category:"Books",price:"",item_condition:"Good",location:"UEW Campus"});
       setShowForm(false); setNotice("Your listing is now live."); await loadListings();
     } catch(error) { setNotice(error instanceof Error ? error.message : "Could not publish your listing."); }
@@ -103,6 +117,7 @@ export default function MarketplacePage() {
       {showForm && <form className="market-form" onSubmit={createListing}>
         <div className="market-form-heading"><h2>Create a listing</h2><button type="button" onClick={()=>setShowForm(false)}>Close</button></div>
         <label>Item title<input required minLength={3} maxLength={100} value={form.title} onChange={e=>setForm({...form,title:e.target.value})} placeholder="e.g. Engineering mathematics textbook"/></label>
+        <label>Item photo (optional, JPG/PNG/WebP, max 5 MB)<input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event:ChangeEvent<HTMLInputElement>)=>{const file=event.target.files?.[0] ?? null;if(file && (!["image/jpeg","image/png","image/webp"].includes(file.type) || file.size>5*1024*1024)){setNotice("Choose a JPG, PNG or WebP image under 5 MB.");event.target.value="";setImageFile(null);return;}setImageFile(file);}}/><small>{imageFile ? imageFile.name : "Add one clear photo of the item."}</small></label>
         <label>Description<textarea required minLength={10} maxLength={2000} rows={4} value={form.description} onChange={e=>setForm({...form,description:e.target.value})} placeholder="Describe the item and any details a buyer should know."/></label>
         <div className="market-form-grid"><label>Category<select value={form.category} onChange={e=>setForm({...form,category:e.target.value})}>{categories.slice(1).map(value=><option key={value}>{value}</option>)}</select></label>
           <label>Price (GHS)<input required type="number" min="0" step="0.01" value={form.price} onChange={e=>setForm({...form,price:e.target.value})} placeholder="0.00"/></label>
@@ -114,6 +129,7 @@ export default function MarketplacePage() {
       <div className="market-results-heading"><h2>Campus listings</h2><span>{visible.length} items</span></div>
       {visible.length ? <section className="market-grid">{visible.map(item=><article className="market-card" key={item.id}>
         <div className="market-card-top"><span>{item.category}</span><span className={item.status==="sold"?"market-sold":"market-available"}>{item.status==="sold"?"SOLD":"AVAILABLE"}</span></div>
+        {imageUrls[item.id] && <img className="market-listing-image" src={imageUrls[item.id]} alt={item.title} />}
         <h3>{item.title}</h3><strong className="market-price">{money(Number(item.price))}</strong><p>{item.description}</p>
         <div className="market-item-meta"><span>◷ {item.item_condition}</span><span>⌖ {item.location}</span></div>
         <div className="market-seller"><span className="market-avatar">{(sellers[item.seller_id]?.display_name || "U").slice(0,1).toUpperCase()}</span><div><strong>{sellers[item.seller_id]?.display_name || "UEW member"}</strong><small>@{sellers[item.seller_id]?.username || "member"}</small></div></div>
