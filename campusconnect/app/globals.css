@@ -113,3 +113,16 @@
 .connection-pending{font-size:10px;color:#8a6b2d;background:#faf4e4;border-radius:20px;padding:7px 10px}
 .discover-card-actions .discover-message{flex:1}
 @media(max-width:600px){.connection-summary-grid{gap:7px}.connection-summary{padding:11px}.connection-summary strong{font-size:19px}.connection-summary span{font-size:9px}.connection-row{align-items:flex-start;flex-wrap:wrap}.connection-actions{width:100%}.connection-actions button{flex:1}}
+
+/* Notification inbox refinements */
+.notification-popover{max-height:min(70vh,560px);overflow:auto}
+.notification-popover-heading{position:sticky;top:0;z-index:2;background:#fff}
+.notification-popover-heading strong{display:flex;align-items:center;gap:7px}
+.notification-popover-heading strong small{font-size:9px;font-weight:600;color:var(--muted)}
+.notification-heading-actions{display:flex;align-items:center;gap:10px}
+.notification-heading-actions button{border:0;background:transparent;color:var(--green);font:700 10px Manrope;cursor:pointer}
+.notification-heading-actions button:disabled{opacity:.4;cursor:default}
+.notification-item{width:100%;text-align:left}
+.notification-item-copy time{display:block;margin-top:5px}
+.notification-item.unread{background:#f2f8f1}
+.notification-item.unread .notification-dot{background:var(--green)}
