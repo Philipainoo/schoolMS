@@ -1055,6 +1055,7 @@ export default function Home() {
             <button className={activeView === "groups" ? "side-link selected" : "side-link"} onClick={() => { setActiveView("groups"); setActiveGroupId(null); void loadGroups(); }}><span>◎</span> Communities</button>
             <button className={activeView === "messages" ? "side-link selected" : "side-link"} onClick={() => { setActiveView("messages"); setActiveGroupId(null); void loadConversations(); }}><span>✉</span> Messages</button>
             <button className={activeView === "events" ? "side-link selected" : "side-link"} onClick={() => { setActiveView("events"); setActiveGroupId(null); void loadCampusBoard(); }}><span>▦</span> Events & notices</button>
+            <a className="side-link" href="/marketplace"><span>▤</span> Marketplace</a>
             <div className="sidebar-note"><strong>UEW · Winneba</strong><p>A community built around your campus experience.</p></div>
           </aside>
           <section className="feed-column">
