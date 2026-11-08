@@ -58,7 +58,7 @@ export default function Home() {
   const [filter, setFilter] = useState<"all" | Post["channel"]>("all");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
-  const [activeView, setActiveView] = useState<"feed" | "discover" | "groups" | "messages" | "events">("feed");
+  const [activeView, setActiveView] = useState<"feed" | "discover" | "connections" | "groups" | "messages" | "events">("feed");
   const [discoverySearch, setDiscoverySearch] = useState("");
   const [discoveredMembers, setDiscoveredMembers] = useState<Profile[]>([]);
   const [discoveryBusy, setDiscoveryBusy] = useState(false);
@@ -1197,7 +1197,7 @@ export default function Home() {
                 </div>
                 <p className="discover-bio">{person.bio || "This member hasn't added a bio yet."}</p>
                 <div className="discover-card-actions"><button className="profile-edit-button" type="button" onClick={() => void sendConnectionRequest(person)} disabled={connectionBusy || connectionRows.some((row) => (row.requester_id === user?.id ? row.recipient_id : row.requester_id) === person.user_id)}>{connectionRows.some((row) => row.status === "accepted" && (row.requester_id === user?.id ? row.recipient_id : row.requester_id) === person.user_id) ? "Connected" : connectionRows.some((row) => row.status === "pending" && row.requester_id === user?.id && row.recipient_id === person.user_id) ? "Request sent" : connectionRows.some((row) => row.status === "pending" && row.recipient_id === user?.id && row.requester_id === person.user_id) ? "Respond in Connections" : connectionRows.some((row) => (row.requester_id === user?.id ? row.recipient_id : row.requester_id) === person.user_id) ? "Request closed" : "Connect"}</button><button className="profile-edit-button discover-message" type="button" onClick={() => void startDirectConversation(person)} disabled={messageBusy}>Message <span>↗</span></button></div>
-              </article>)}</div> : <div className="empty card"><div className="empty-icon">⌕</div><h3>Find your UEW people</h3><p>Search by a student's name, username or programme to discover members and start a conversation.</p></div>}
+              </article>)}</div> : <div className="empty card"><div className="empty-icon">⌕</div><h3>Find your UEW people</h3><p>Search by a student&apos;s name, username or programme to discover members and start a conversation.</p></div>}
             </div>
             <div className={activeView === "connections" ? "view-content" : "view-content hidden"}>
               <div className="feed-heading"><div><span className="eyebrow">YOUR UEW NETWORK</span><h1>Connections</h1><p>Build your campus circle and keep up with classmates.</p></div><span className="campus-pill">UEW COMMUNITY</span></div>
@@ -1214,9 +1214,9 @@ export default function Home() {
                 {connectionRows.filter((row) => row.status === "accepted").map((row) => { const peerId = row.requester_id === user?.id ? row.recipient_id : row.requester_id; const person = connectionProfiles[peerId]; return <article className="connection-row card" key={row.id}><div className="connection-person">{avatarUrls[peerId] ? <img className="discover-avatar" src={avatarUrls[peerId]} alt=""/> : <div className="discover-avatar discover-avatar-fallback">{person ? initials(person.display_name) : "UEW"}</div>}<div className="discover-person-copy"><strong>{person?.display_name || "UEW member"}</strong><span>@{person?.username || "member"}</span></div></div><button className="profile-edit-button" onClick={() => person && void startDirectConversation(person)} disabled={!person || messageBusy}>Message</button></article>; })}
                 {!connectionRows.some((row) => row.status === "accepted") && <div className="empty card"><p>Your accepted connections will appear here.</p><button className="primary-button" onClick={() => setActiveView("discover")}>Discover members</button></div>}
               </section>
-              <section className="connections-section"><div className="discover-results-heading"><h2>Requests you've sent</h2><span>Awaiting a response</span></div>
+              <section className="connections-section"><div className="discover-results-heading"><h2>Requests you&apos;ve sent</h2><span>Awaiting a response</span></div>
                 {connectionRows.filter((row) => row.status === "pending" && row.requester_id === user?.id).map((row) => <article className="connection-row card" key={row.id}><div className="connection-person"><div className="discover-avatar discover-avatar-fallback">UEW</div><div className="discover-person-copy"><strong>{connectionProfiles[row.recipient_id]?.display_name || "UEW member"}</strong><span>@{connectionProfiles[row.recipient_id]?.username || "member"}</span></div></div><span className="connection-pending">Pending</span></article>)}
-                {!connectionRows.some((row) => row.status === "pending" && row.requester_id === user?.id) && <div className="empty card"><p>You haven't sent any requests yet.</p></div>}
+                {!connectionRows.some((row) => row.status === "pending" && row.requester_id === user?.id) && <div className="empty card"><p>You haven&apos;t sent any requests yet.</p></div>}
               </section>
             </div>
             <div className={activeView === "groups" ? "view-content" : "view-content hidden"}>
