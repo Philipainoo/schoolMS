@@ -456,16 +456,11 @@ export default function Home() {
     setBusy(true); setNotice("");
     try {
       if (mode === "signup") {
-        const { data: institution, error: institutionError } = await supabase
-          .from("institutions").select("id").eq("slug", "uew").single();
-        if (institutionError || !institution) throw new Error("The UEW campus is not available yet. Please try again later.");
         const { error } = await supabase.auth.signUp({
           email, password,
           options: {
             emailRedirectTo: window.location.origin,
             data: {
-              institution_id: institution.id,
-              role: "student",
               display_name: displayName.trim(),
               username: username.trim().toLowerCase(),
             },
@@ -488,11 +483,8 @@ export default function Home() {
     if (!supabase || !user || !draft.trim()) return;
     setBusy(true); setNotice("");
     try {
-      const { data: institution, error: institutionError } = await supabase
-        .from("institutions").select("id").eq("slug", "uew").single();
-      if (institutionError || !institution) throw new Error("UEW campus could not be found.");
       const { error } = await supabase.from("posts").insert({
-        institution_id: institution.id,
+        institution_id: null,
         author_id: user.id,
         channel,
         body: draft.trim(),
@@ -955,11 +947,8 @@ export default function Home() {
     if (!body) return;
     setCommentBusy(postId); setNotice("");
     try {
-      const { data: institution, error: institutionError } = await supabase
-        .from("institutions").select("id").eq("slug", "uew").single();
-      if (institutionError || !institution) throw new Error("UEW campus could not be found.");
       const { error } = await supabase.from("comments").insert({
-        institution_id: institution.id,
+        institution_id: null,
         post_id: postId,
         author_id: user.id,
         body,
@@ -1030,7 +1019,7 @@ export default function Home() {
               <label>Password<input required minLength={8} type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="At least 8 characters"/></label>
               <button className="primary-button" disabled={busy}>{busy ? "Please wait…" : mode === "signup" ? "Create my account" : "Sign in"} <span>→</span></button>
             </form>
-            <p className="fine-print">Email confirmation is required. Confirming an email address does not by itself verify current UEW enrolment. Official UEW email-domain eligibility is awaiting confirmation.</p>
+            <p className="fine-print">A valid email address is required. Confirm your email to activate your CampusConnect account.</p>
             {notice && <p className="notice" role="status">{notice}</p>}
           </div>
         </section>
