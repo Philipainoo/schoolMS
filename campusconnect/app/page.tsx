@@ -165,7 +165,7 @@ export default function Home() {
       setVerificationStatus(null);
       const { data, error } = await supabase.from("users").select("verification_status,role").eq("id", user.id).single();
       if (!active) return;
-      if (error) { setNotice("We couldn't check your campus verification status. Please try again."); setVerificationStatus("error"); return; }
+      if (error) { setNotice("We couldn't check your account status. Please try again."); setVerificationStatus("error"); return; }
       setVerificationStatus(data.verification_status as "pending" | "verified" | "suspended");
       setAccountRole(data.role as "student" | "faculty");
     }
@@ -471,7 +471,7 @@ export default function Home() {
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
-        setNotice("Welcome back to campus.");
+        setNotice("Welcome back to CampusConnect.");
       }
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Something went wrong.");
@@ -1027,10 +1027,10 @@ export default function Home() {
         <section className="verification-layout">
           <div className="verification-card card">
             <div className="verification-icon">{verificationStatus === "suspended" || verificationStatus === "error" ? "!" : "⌛"}</div>
-            <div className="eyebrow">UEW ACCOUNT CHECK</div>
-            <h1>{verificationStatus === "suspended" ? "Account access paused" : verificationStatus === "error" ? "We couldn’t check your account" : verificationStatus === "pending" ? "Your account is awaiting verification" : "Checking your campus account…"}</h1>
-            <p>{verificationStatus === "pending" ? "Your email sign-in is confirmed, but CampusConnect still needs an authorised UEW verification before you can access the campus community. This helps keep the network limited to eligible members." : verificationStatus === "suspended" ? "Your account is currently suspended. Please contact the CampusConnect support team or your campus administrator for help." : verificationStatus === "error" ? "Your account status could not be retrieved. Your access remains restricted until the check succeeds." : "Please wait while we check your campus membership status."}</p>
-            {verificationStatus === "pending" && <p className="verification-note">Email confirmation alone does not prove current enrolment. An authorised campus administrator must complete this step.</p>}{notice && <p className="notice" role="status">{notice}</p>}{verificationStatus === "error" && <button className="profile-edit-button" onClick={() => window.location.reload()}>Try again</button>}
+            <div className="eyebrow">EMAIL VERIFICATION</div>
+            <h1>{verificationStatus === "suspended" ? "Account access paused" : verificationStatus === "error" ? "We couldn’t check your account" : verificationStatus === "pending" ? "Confirm your email to activate your account" : "Checking your account…"}</h1>
+            <p>{verificationStatus === "pending" ? "Your account is waiting for email confirmation. Open the confirmation link we sent to your email address, then sign in." : verificationStatus === "suspended" ? "Your account is currently suspended. Please contact CampusConnect support for help." : verificationStatus === "error" ? "Your account status could not be retrieved. Your access remains restricted until the check succeeds." : "Please wait while we check your account status."}</p>
+            {notice && <p className="notice" role="status">{notice}</p>}{verificationStatus === "error" && <button className="profile-edit-button" onClick={() => window.location.reload()}>Try again</button>}
             <button className="primary-button" onClick={signOut}>Sign out</button>
           </div>
         </section>
