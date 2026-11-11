@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import type { ChangeEvent } from "react";
 import { getSupabase } from "@/lib/supabase";
@@ -271,7 +270,7 @@ export default function Home() {
     setConnectionBusy(true); setNotice("");
     try {
       const { data: account, error: accountError } = await supabase.from("users").select("institution_id").eq("id", user.id).single();
-      if (accountError || !account) throw new Error("Your UEW account could not be loaded.");
+      if (accountError || !account) throw new Error("Your account could not be loaded.");
       const { error } = await supabase.from("campus_connections").insert({
         institution_id: account.institution_id, requester_id: user.id, recipient_id: person.user_id, status: "pending"
       });
@@ -333,7 +332,7 @@ export default function Home() {
         .select("user_id,display_name,username,avatar_path,bio,major,department,graduation_year")
         .eq("username", handle).maybeSingle();
       if (error) throw error;
-      if (!data || data.user_id === user?.id) throw new Error("No other UEW member was found with that username.");
+      if (!data || data.user_id === user?.id) throw new Error("No other member was found with that username.");
       setMemberResult(data as Profile);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Could not search for that member.");
@@ -364,7 +363,7 @@ export default function Home() {
     try {
       const { data: account, error: accountError } = await supabase.from("users")
         .select("institution_id").eq("id", user.id).single();
-      if (accountError || !account) throw new Error("Your UEW account could not be loaded.");
+      if (accountError || !account) throw new Error("Your account could not be loaded.");
       const { error } = await supabase.from("messages").insert({
         institution_id: account.institution_id,
         conversation_id: activeConversationId,
@@ -569,10 +568,10 @@ export default function Home() {
     if (!supabase || !user || accountRole !== "faculty") return;
     setBoardBusy(true); setNotice("");
     try {
-      const { data: institution, error: institutionError } = await supabase.from("institutions").select("id").eq("slug", "uew").single();
-      if (institutionError || !institution) throw new Error("UEW campus could not be found.");
+      const { data: institution, error: institutionError } = await supabase.from("users").select("institution_id").eq("id", user.id).single();
+      if (institutionError || !institution?.institution_id) throw new Error("Join a community before publishing official items.");
       const { error } = await supabase.from("campus_events").insert({
-        institution_id: institution.id, organizer_id: user.id, title: eventForm.title.trim(),
+        institution_id: institution.institution_id, organizer_id: user.id, title: eventForm.title.trim(),
         description: eventForm.description.trim() || null, starts_at: new Date(eventForm.starts_at).toISOString(),
         ends_at: eventForm.ends_at ? new Date(eventForm.ends_at).toISOString() : null, location: eventForm.location.trim(),
       });
@@ -588,10 +587,10 @@ export default function Home() {
     if (!supabase || !user || accountRole !== "faculty") return;
     setBoardBusy(true); setNotice("");
     try {
-      const { data: institution, error: institutionError } = await supabase.from("institutions").select("id").eq("slug", "uew").single();
-      if (institutionError || !institution) throw new Error("UEW campus could not be found.");
+      const { data: institution, error: institutionError } = await supabase.from("users").select("institution_id").eq("id", user.id).single();
+      if (institutionError || !institution?.institution_id) throw new Error("Join a community before publishing official items.");
       const { error } = await supabase.from("announcements").insert({
-        institution_id: institution.id, author_id: user.id, title: announcementForm.title.trim(),
+        institution_id: institution.institution_id, author_id: user.id, title: announcementForm.title.trim(),
         content: announcementForm.content.trim(), priority: announcementForm.priority,
       });
       if (error) throw error;
@@ -645,7 +644,7 @@ export default function Home() {
     const ids = [...new Set(invites.map((invite) => invite.group_id))];
     const { data: groupRows } = await supabase.from("groups").select("id,name").in("id", ids);
     const names = Object.fromEntries((groupRows ?? []).map((group) => [group.id, group.name]));
-    setMyGroupInvites(invites.map((invite) => ({ ...invite, group_name: names[invite.group_id] || "UEW community" })));
+    setMyGroupInvites(invites.map((invite) => ({ ...invite, group_name: names[invite.group_id] || "CampusConnect community" })));
   }
 
   async function loadGroupMembers(groupId: string) {
@@ -676,10 +675,10 @@ export default function Home() {
     try {
       const { data: target, error: targetError } = await supabase.from("profiles")
         .select("user_id,username").eq("username", handle).maybeSingle();
-      if (targetError || !target) throw new Error("No UEW member was found with that username.");
+      if (targetError || !target) throw new Error("No member was found with that username.");
       if (target.user_id === user.id) throw new Error("You cannot invite yourself.");
       const { data: account } = await supabase.from("users").select("institution_id").eq("id", user.id).single();
-      if (!account) throw new Error("Your UEW account could not be loaded.");
+      if (!account) throw new Error("Your account could not be loaded.");
       const { error } = await supabase.from("group_invites").insert({
         institution_id: account.institution_id,
         group_id: activeGroup.id,
@@ -778,7 +777,7 @@ export default function Home() {
     try {
       const { data: account, error: accountError } = await supabase.from("users")
         .select("institution_id").eq("id", user.id).single();
-      if (accountError || !account) throw new Error("Your verified UEW account could not be loaded.");
+      if (accountError || !account) throw new Error("Your verified account could not be loaded.");
       const { data, error } = await supabase.from("groups").insert({
         institution_id: account.institution_id,
         owner_id: user.id,
@@ -974,12 +973,12 @@ export default function Home() {
   const visiblePosts = posts.filter((post) => filter === "all" || post.channel === filter);
   const initials = (name: string) => name.split(" ").map((part) => part[0]).slice(0, 2).join("").toUpperCase();
 
-  if (!supabase) return <main className="setup"><div className="setup-card"><Image src="/uew-logo.svg" alt="University of Education, Winneba crest" width={76} height={75} className="brand-logo brand-logo-large" /><h1>CampusConnect</h1><p>Connect your Supabase project to launch the UEW campus community.</p><code>cp .env.example .env.local</code><p className="muted">Then add your Supabase public key and restart the development server.</p></div></main>;
+  if (!supabase) return <main className="setup"><div className="setup-card"><span className="brand-mark" aria-hidden="true">C</span><h1>CampusConnect</h1><p>Connect your Supabase project to launch your CampusConnect community.</p><code>cp .env.example .env.local</code><p className="muted">Then add your Supabase public key and restart the development server.</p></div></main>;
 
   return (
     <main className="shell">
       <header className="topbar">
-        <a className="brand" href="#" aria-label="CampusConnect UEW home"><Image src="/uew-logo.svg" alt="University of Education, Winneba crest" width={48} height={47} className="brand-logo" /><span>Campus<span className="brand-accent">Connect</span><small>UEW COMMUNITY</small></span></a>
+        <a className="brand" href="#" aria-label="CampusConnect home"><span className="brand-mark" aria-hidden="true">C</span><span>Campus<span className="brand-accent">Connect</span><small>YOUR CAMPUS NETWORK</small></span></a>
         {user ? <div className="topbar-actions">
           {verificationStatus === "verified" && <div className="notification-menu-wrap">
             <button type="button" className="notification-trigger" onClick={() => setNotificationOpen((open) => !open)} aria-expanded={notificationOpen}>
@@ -991,13 +990,13 @@ export default function Home() {
               {notifications.length === 0 ? <p className="notification-empty">You’re all caught up. Connection updates, comments, messages and community invitations will appear here.</p> : <div className="notification-list">
                 {notifications.map((item) => <button type="button" key={item.id} className={item.read_at ? "notification-item" : "notification-item unread"} onClick={() => void openNotification(item)}>
                   <span className="notification-dot" aria-hidden="true"/>
-                  <span className="notification-item-copy"><strong>{item.actor_id ? profiles[item.actor_id]?.display_name || "A UEW member" : "CampusConnect"}</strong><span>{item.message}</span><time>{new Date(item.created_at).toLocaleString("en-GH", { dateStyle: "medium", timeStyle: "short", timeZone: "Africa/Accra" })}</time></span>
+                  <span className="notification-item-copy"><strong>{item.actor_id ? profiles[item.actor_id]?.display_name || "A CampusConnect member" : "CampusConnect"}</strong><span>{item.message}</span><time>{new Date(item.created_at).toLocaleString("en-GH", { dateStyle: "medium", timeStyle: "short", timeZone: "Africa/Accra" })}</time></span>
                 </button>)}
               </div>}
             </div>}
           </div>}
           <button className="text-button" onClick={signOut}>Sign out</button>
-        </div> : <span className="top-note">University of Education, Winneba</span>}
+        </div> : <span className="top-note">Your campus network</span>}
       </header>
 
       {!user ? (
@@ -1005,21 +1004,21 @@ export default function Home() {
           <div className="welcome-panel">
             <div className="eyebrow">YOUR CAMPUS, CONNECTED</div>
             <h1>Find your people.<br/><span>Make campus count.</span></h1>
-            <p>One place for campus conversations, academic support, student communities and opportunities at UEW.</p>
+            <p>One place for conversations, academic support, communities and opportunities across campuses.</p>
             <div className="welcome-points"><span>✳ Campus conversations</span><span>✳ Study connections</span><span>✳ Student marketplace</span></div>
             <div className="orb orb-one"/><div className="orb orb-two"/>
           </div>
           <div className="auth-card">
             <div className="auth-tabs"><button className={mode === "signup" ? "active" : ""} onClick={() => setMode("signup")}>Create account</button><button className={mode === "signin" ? "active" : ""} onClick={() => setMode("signin")}>Sign in</button></div>
             <h2>{mode === "signup" ? "Join your campus" : "Welcome back"}</h2>
-            <p className="muted">{mode === "signup" ? "Create your UEW community account." : "Sign in to catch up with campus."}</p>
+            <p className="muted">{mode === "signup" ? "Create your CampusConnect account." : "Sign in to catch up with campus."}</p>
             <form onSubmit={authenticate} className="stack">
               {mode === "signup" && <><label>Full name<input required value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Your name"/></label><label>Username<input required minLength={3} maxLength={30} pattern="[A-Za-z0-9_]+" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="e.g. ama_mensah"/></label></>}
-              <label>University email<input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com"/></label>
+              <label>Email address<input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com"/></label>
               <label>Password<input required minLength={8} type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="At least 8 characters"/></label>
               <button className="primary-button" disabled={busy}>{busy ? "Please wait…" : mode === "signup" ? "Create my account" : "Sign in"} <span>→</span></button>
             </form>
-            <p className="fine-print">A valid email address is required. Confirm your email to activate your CampusConnect account.</p>
+            <p className="fine-print">{mode === "signup" ? "A valid email address is required. Confirm your email to activate your CampusConnect account." : "Use the email address and password associated with your CampusConnect account."}</p>
             {notice && <p className="notice" role="status">{notice}</p>}
           </div>
         </section>
@@ -1045,21 +1044,21 @@ export default function Home() {
             <button className={activeView === "messages" ? "side-link selected" : "side-link"} onClick={() => { setActiveView("messages"); setActiveGroupId(null); void loadConversations(); }}><span>✉</span> Messages</button>
             <button className={activeView === "events" ? "side-link selected" : "side-link"} onClick={() => { setActiveView("events"); setActiveGroupId(null); void loadCampusBoard(); }}><span>▦</span> Events & notices</button>
             <a className="side-link" href="/marketplace"><span>▤</span> Marketplace</a>
-            <div className="sidebar-note"><strong>UEW · Winneba</strong><p>A community built around your campus experience.</p></div>
+            <div className="sidebar-note"><strong>YOUR COMMUNITY</strong><p>A community built around your campus experience.</p></div>
           </aside>
           <section className="feed-column">
             <div className={activeView === "feed" ? "view-content" : "view-content hidden"}>
             <section className="dashboard-welcome">
               <div className="dashboard-welcome-copy">
-                <span className="dashboard-kicker">YOUR UEW COMMUNITY</span>
+                <span className="dashboard-kicker">YOUR CAMPUS COMMUNITY</span>
                 <h1>Good {new Date().getHours() < 12 ? "morning" : new Date().getHours() < 17 ? "afternoon" : "evening"}, {myProfile?.display_name?.split(" ")[0] || "there"}.</h1>
-                <p>Your campus, your people, your next opportunity. See what’s happening across Winneba today.</p>
+                <p>Your campus, your people, your next opportunity. See what’s happening across your communities today.</p>
                 <div className="dashboard-welcome-actions">
                   <button type="button" onClick={() => document.querySelector<HTMLTextAreaElement>(".composer textarea")?.focus()}>Share an update <span>↗</span></button>
                   <button type="button" className="dashboard-secondary-action" onClick={() => { setActiveView("events"); void loadCampusBoard(); }}>Explore events</button>
                 </div>
               </div>
-              <Image src="/uew-logo.svg" alt="" aria-hidden="true" width={116} height={114} className="dashboard-crest" priority/>
+
             </section>
             <section className="dashboard-quick-stats" aria-label="Campus activity overview">
               <button type="button" className="dashboard-stat-card" onClick={() => { setActiveView("feed"); setFilter("all"); }}>
@@ -1096,23 +1095,23 @@ export default function Home() {
                 <div className="profile-editor-actions"><span>Keep personal details you don&apos;t want public out of your bio.</span><button className="primary-button compact" disabled={profileSaving}>{profileSaving ? "Saving…" : "Save profile"}</button></div>
               </form>}
             </section>
-            <div className="feed-heading"><div><div className="eyebrow">MONDAY TO SUNDAY, TOGETHER</div><h1>Your campus feed</h1><p className="muted">What’s happening around UEW?</p></div><div className="campus-pill"><span/> {realtimeStatus === "connected" ? "LIVE UPDATES" : realtimeStatus === "connecting" ? "CONNECTING…" : "LIVE UPDATES OFFLINE"}</div></div>
+            <div className="feed-heading"><div><div className="eyebrow">MONDAY TO SUNDAY, TOGETHER</div><h1>Your campus feed</h1><p className="muted">What’s happening across your communities?</p></div><div className="campus-pill"><span/> {realtimeStatus === "connected" ? "LIVE UPDATES" : realtimeStatus === "connecting" ? "CONNECTING…" : "LIVE UPDATES OFFLINE"}</div></div>
             <form className="composer card" onSubmit={publish}>
               <div className="composer-top"><div className="avatar">{initials(user.email?.split("@")[0] || "U")}</div><textarea value={draft} onChange={(e) => setDraft(e.target.value)} maxLength={10000} placeholder="Share something with your campus…" aria-label="Write a campus post"/></div>
               <div className="composer-bottom"><select value={channel} onChange={(e) => setChannel(e.target.value as Post["channel"])} aria-label="Choose post channel">{channels.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select><button className="primary-button compact" disabled={busy || !draft.trim()}>Post <span>→</span></button></div>
             </form>
             <div className="filters">{[{id:"all",label:"For you"},...channels].map((item) => <button key={item.id} className={filter === item.id ? "filter active" : "filter"} onClick={() => setFilter(item.id as typeof filter)}>{item.label}</button>)}</div>
             <div className="posts">
-              {visiblePosts.length === 0 ? <div className="empty card"><div className="empty-icon">✳</div><h3>Your campus story starts here</h3><p>There are no posts in this feed yet. Be the first to share something with UEW.</p></div> : visiblePosts.map((post) => {
+              {visiblePosts.length === 0 ? <div className="empty card"><div className="empty-icon">✳</div><h3>Your campus story starts here</h3><p>There are no posts in this feed yet. Be the first to share something with your community.</p></div> : visiblePosts.map((post) => {
                 const person = profiles[post.author_id];
-                const name = person?.display_name || "UEW student";
+                const name = person?.display_name || "CampusConnect member";
                 return <article className="post card" key={post.id}>
                   <div className="post-head">{avatarUrls[post.author_id] ? <img className="avatar avatar-image" src={avatarUrls[post.author_id]} alt=""/> : <div className="avatar">{initials(name)}</div>}<div className="post-author"><strong>{name}</strong><span>@{person?.username || "campusmember"} · {new Date(post.created_at).toLocaleString()}</span></div><span className="channel-tag">{channels.find((item) => item.id === post.channel)?.label}</span></div>
                   <p className="post-body">{post.body}</p>
                   <div className="comment-list">
                     {(comments[post.id] ?? []).map((comment) => {
                       const commenter = profiles[comment.author_id];
-                      return <div className="comment" key={comment.id}>{avatarUrls[comment.author_id] ? <img className="comment-avatar" src={avatarUrls[comment.author_id]} alt=""/> : <div className="comment-avatar">{initials(commenter?.display_name || "UEW")}</div>}<div><strong>{commenter?.display_name || "UEW student"}</strong><p>{comment.body}</p><time>{new Date(comment.created_at).toLocaleString()}</time></div></div>;
+                      return <div className="comment" key={comment.id}>{avatarUrls[comment.author_id] ? <img className="comment-avatar" src={avatarUrls[comment.author_id]} alt=""/> : <div className="comment-avatar">{initials(commenter?.display_name || "CC")}</div>}<div><strong>{commenter?.display_name || "CampusConnect member"}</strong><p>{comment.body}</p><time>{new Date(comment.created_at).toLocaleString()}</time></div></div>;
                     })}
                   </div>
                   <form className="comment-form" onSubmit={(event) => publishComment(event, post.id)}>
@@ -1125,7 +1124,7 @@ export default function Home() {
             </div>
             <div className={activeView === "messages" ? "view-content" : "view-content hidden"}>
               <div className="messages-view">
-                <div className="feed-heading"><div><div className="eyebrow">PRIVATE CAMPUS CHATS</div><h1>Messages</h1><p className="muted">Connect one-to-one with verified UEW members.</p></div><div className="campus-pill"><span/> PRIVATE</div></div>
+                <div className="feed-heading"><div><div className="eyebrow">PRIVATE CAMPUS CHATS</div><h1>Messages</h1><p className="muted">Connect one-to-one with verified community members.</p></div><div className="campus-pill"><span/> PRIVATE</div></div>
                 <form className="message-search-card card" onSubmit={findMessageMember}>
                   <label htmlFor="message-member-search">Start a conversation</label>
                   <div className="message-search-row"><input id="message-member-search" value={memberSearch} onChange={(e) => setMemberSearch(e.target.value)} placeholder="Search by exact username, e.g. ama_owusu"/><button className="primary-button compact" disabled={messageSearchBusy || !memberSearch.trim()}>{messageSearchBusy ? "Searching…" : "Find member"}</button></div>
@@ -1134,34 +1133,34 @@ export default function Home() {
                 <div className="message-workspace card">
                   <section className="conversation-list">
                     <div className="groups-section-heading"><h2>Your chats</h2><span>{conversations.length}</span></div>
-                    {conversations.length === 0 ? <p className="message-empty-copy">No conversations yet. Search for a UEW username above to start one.</p> : conversations.map((conversation) => <button type="button" className={activeConversationId === conversation.id ? "conversation-item active" : "conversation-item"} key={conversation.id} onClick={() => void openConversation(conversation.id)}><span className="conversation-avatar">{initials(conversation.peer?.display_name || "UEW")}</span><span className="conversation-item-copy"><strong>{conversation.peer?.display_name || "UEW member"}</strong><small>@{conversation.peer?.username || "campusmember"}</small><span>{conversation.lastMessage ? (conversation.lastMessage.sender_id === user.id ? "You: " : "") + conversation.lastMessage.body : "Start the conversation"}</span></span></button>)}
+                    {conversations.length === 0 ? <p className="message-empty-copy">No conversations yet. Search for a username above to start one.</p> : conversations.map((conversation) => <button type="button" className={activeConversationId === conversation.id ? "conversation-item active" : "conversation-item"} key={conversation.id} onClick={() => void openConversation(conversation.id)}><span className="conversation-avatar">{initials(conversation.peer?.display_name || "CC")}</span><span className="conversation-item-copy"><strong>{conversation.peer?.display_name || "Community member"}</strong><small>@{conversation.peer?.username || "campusmember"}</small><span>{conversation.lastMessage ? (conversation.lastMessage.sender_id === user.id ? "You: " : "") + conversation.lastMessage.body : "Start the conversation"}</span></span></button>)}
                   </section>
                   <section className="message-thread">
                     {activeConversationId ? <>
-                      <div className="message-thread-heading"><strong>{conversations.find((item) => item.id === activeConversationId)?.peer?.display_name || "UEW member"}</strong><span>Private conversation</span></div>
+                      <div className="message-thread-heading"><strong>{conversations.find((item) => item.id === activeConversationId)?.peer?.display_name || "Community member"}</strong><span>Private conversation</span></div>
                       <div className="message-thread-body">
                         {threadMessages.length === 0 ? <div className="message-thread-empty">Say hello and start the conversation.</div> : threadMessages.map((message) => <div key={message.id} className={message.sender_id === user.id ? "message-bubble mine" : "message-bubble"}><p>{message.body}</p><time>{new Date(message.created_at).toLocaleString()}</time></div>)}
                       </div>
                       <form className="message-compose" onSubmit={sendDirectMessage}><input value={messageDraft} onChange={(e) => setMessageDraft(e.target.value)} maxLength={10000} placeholder="Write a message…" aria-label="Write a direct message"/><button className="primary-button compact" disabled={messageBusy || !messageDraft.trim()}>{messageBusy ? "Sending…" : "Send"} <span>→</span></button></form>
-                    </> : <div className="message-thread-placeholder"><span>✉</span><strong>Your private conversations</strong><p>Choose a chat or search for a UEW member to begin.</p></div>}
+                    </> : <div className="message-thread-placeholder"><span>✉</span><strong>Your private conversations</strong><p>Choose a chat or search for a member to begin.</p></div>}
                   </section>
                 </div>
               </div>
             </div>
             <div className={activeView === "events" ? "view-content" : "view-content hidden"}>
               <div className="campus-board-view">
-                <div className="feed-heading"><div><div className="eyebrow">WHAT’S HAPPENING AT UEW</div><h1>Events & announcements</h1><p className="muted">Stay up to date with campus activities and official notices.</p></div><div className="campus-pill"><span/> UEW CAMPUS</div></div>
+                <div className="feed-heading"><div><div className="eyebrow">WHAT’S HAPPENING</div><h1>Events & announcements</h1><p className="muted">Stay up to date with campus activities and official notices.</p></div><div className="campus-pill"><span/> YOUR COMMUNITY</div></div>
                 {accountRole === "faculty" && <div className="board-create-grid">
                   <form className="board-form card" onSubmit={createCampusEvent}>
                     <div className="group-create-heading"><div><strong>Publish a campus event</strong><p>Share a lecture, programme, meeting or campus activity.</p></div><span>▦</span></div>
-                    <label>Event title<input required minLength={2} maxLength={200} value={eventForm.title} onChange={(e) => setEventForm((v) => ({ ...v, title: e.target.value }))} placeholder="e.g. UEW Career Fair"/></label>
+                    <label>Event title<input required minLength={2} maxLength={200} value={eventForm.title} onChange={(e) => setEventForm((v) => ({ ...v, title: e.target.value }))} placeholder="e.g. CampusConnect Career Fair"/></label>
                     <label>Description<textarea rows={3} maxLength={5000} value={eventForm.description} onChange={(e) => setEventForm((v) => ({ ...v, description: e.target.value }))} placeholder="What should attendees know?"/></label>
                     <div className="board-form-row"><label>Starts<input type="datetime-local" required value={eventForm.starts_at} onChange={(e) => setEventForm((v) => ({ ...v, starts_at: e.target.value }))}/></label><label>Ends (optional)<input type="datetime-local" value={eventForm.ends_at} onChange={(e) => setEventForm((v) => ({ ...v, ends_at: e.target.value }))}/></label></div>
                     <label>Location<input required maxLength={300} value={eventForm.location} onChange={(e) => setEventForm((v) => ({ ...v, location: e.target.value }))} placeholder="e.g. Jophus Anamuah-Mensah Conference Centre"/></label>
                     <button className="primary-button compact" disabled={boardBusy || !eventForm.title.trim() || !eventForm.starts_at || !eventForm.location.trim()}>{boardBusy ? "Publishing…" : "Publish event"} <span>→</span></button>
                   </form>
                   <form className="board-form card" onSubmit={createAnnouncement}>
-                    <div className="group-create-heading"><div><strong>Publish an announcement</strong><p>Post an official update for verified UEW members.</p></div><span>✳</span></div>
+                    <div className="group-create-heading"><div><strong>Publish an announcement</strong><p>Post an official update for verified community members.</p></div><span>✳</span></div>
                     <label>Announcement title<input required minLength={2} maxLength={200} value={announcementForm.title} onChange={(e) => setAnnouncementForm((v) => ({ ...v, title: e.target.value }))} placeholder="e.g. Registration deadline"/></label>
                     <label>Notice<textarea required rows={6} maxLength={20000} value={announcementForm.content} onChange={(e) => setAnnouncementForm((v) => ({ ...v, content: e.target.value }))} placeholder="Write the official notice…"/></label>
                     <label>Priority<select value={announcementForm.priority} onChange={(e) => setAnnouncementForm((v) => ({ ...v, priority: e.target.value as "normal" | "high" }))}><option value="normal">Normal</option><option value="high">Important</option></select></label>
@@ -1172,13 +1171,13 @@ export default function Home() {
                   {announcements.length === 0 ? <div className="empty card"><div className="empty-icon">✳</div><h3>No announcements yet</h3><p>Official campus notices will appear here.</p></div> : announcements.map((item) => <article className={item.priority === "high" ? "announcement-card card important" : "announcement-card card"} key={item.id}><div className="announcement-top"><span className={item.priority === "high" ? "announcement-priority high" : "announcement-priority"}>{item.priority === "high" ? "IMPORTANT" : "CAMPUS NOTICE"}</span><time>{new Date(item.published_at).toLocaleString()}</time></div><h3>{item.title}</h3><p>{item.content}</p></article>)}
                 </section>
                 <section className="board-section"><div className="groups-section-heading"><h2>Upcoming campus events</h2><span>{campusEvents.length} events</span></div>
-                  {campusEvents.length === 0 ? <div className="empty card"><div className="empty-icon">▦</div><h3>No upcoming events listed</h3><p>Check back for lectures, programmes and activities around UEW.</p></div> : <div className="event-list">{campusEvents.map((item) => <article className="event-card card" key={item.id}><div className="event-date"><strong>{new Date(item.starts_at).toLocaleDateString("en-GH", { day: "2-digit" })}</strong><span>{new Date(item.starts_at).toLocaleDateString("en-GH", { month: "short" })}</span></div><div className="event-copy"><h3>{item.title}</h3><p>{item.description || "A campus event for the UEW community."}</p><div className="event-meta"><span>◷ {new Date(item.starts_at).toLocaleString("en-GH", { dateStyle: "medium", timeStyle: "short", timeZone: "Africa/Accra" })}</span><span>⌖ {item.location}</span></div>{item.ends_at && <small>Ends {new Date(item.ends_at).toLocaleString("en-GH", { dateStyle: "medium", timeStyle: "short", timeZone: "Africa/Accra" })}</small>}</div></article>)}</div>}
+                  {campusEvents.length === 0 ? <div className="empty card"><div className="empty-icon">▦</div><h3>No upcoming events listed</h3><p>Check back for lectures, programmes and activities around your communities.</p></div> : <div className="event-list">{campusEvents.map((item) => <article className="event-card card" key={item.id}><div className="event-date"><strong>{new Date(item.starts_at).toLocaleDateString("en-GH", { day: "2-digit" })}</strong><span>{new Date(item.starts_at).toLocaleDateString("en-GH", { month: "short" })}</span></div><div className="event-copy"><h3>{item.title}</h3><p>{item.description || "A community event."}</p><div className="event-meta"><span>◷ {new Date(item.starts_at).toLocaleString("en-GH", { dateStyle: "medium", timeStyle: "short", timeZone: "Africa/Accra" })}</span><span>⌖ {item.location}</span></div>{item.ends_at && <small>Ends {new Date(item.ends_at).toLocaleString("en-GH", { dateStyle: "medium", timeStyle: "short", timeZone: "Africa/Accra" })}</small>}</div></article>)}</div>}
                 </section>
-                {accountRole !== "faculty" && <p className="board-readonly-note">Only verified UEW faculty accounts can publish official events and announcements. Contact your campus administrator if you need publishing access.</p>}
+                {accountRole !== "faculty" && <p className="board-readonly-note">Only verified faculty members of a community can publish official events and announcements. Contact your community administrator if you need publishing access.</p>}
               </div>
             </div>
             <div className={activeView === "discover" ? "view-content" : "view-content hidden"}>
-              <div className="feed-heading"><div><span className="eyebrow">MEET YOUR CAMPUS</span><h1>Discover people</h1><p>Find UEW members by name, username or programme.</p></div><span className="campus-pill">UEW COMMUNITY</span></div>
+              <div className="feed-heading"><div><span className="eyebrow">MEET YOUR CAMPUS</span><h1>Discover people</h1><p>Find people by name, username or programme.</p></div><span className="campus-pill">CAMPUS COMMUNITY</span></div>
               <form className="discover-search card" onSubmit={searchCampusMembers}>
                 <label htmlFor="campus-member-search">Search the campus directory</label>
                 <div className="discover-search-row"><input id="campus-member-search" value={discoverySearch} onChange={(event) => setDiscoverySearch(event.target.value)} placeholder="Try a name, @username or programme…" maxLength={80} required/><button className="primary-button" disabled={discoveryBusy || !discoverySearch.trim()}>{discoveryBusy ? "Searching…" : "Search members"}</button></div>
@@ -1197,25 +1196,25 @@ export default function Home() {
                 </div>
                 <p className="discover-bio">{person.bio || "This member hasn't added a bio yet."}</p>
                 <div className="discover-card-actions"><button className="profile-edit-button" type="button" onClick={() => void sendConnectionRequest(person)} disabled={connectionBusy || connectionRows.some((row) => (row.requester_id === user?.id ? row.recipient_id : row.requester_id) === person.user_id)}>{connectionRows.some((row) => row.status === "accepted" && (row.requester_id === user?.id ? row.recipient_id : row.requester_id) === person.user_id) ? "Connected" : connectionRows.some((row) => row.status === "pending" && row.requester_id === user?.id && row.recipient_id === person.user_id) ? "Request sent" : connectionRows.some((row) => row.status === "pending" && row.recipient_id === user?.id && row.requester_id === person.user_id) ? "Respond in Connections" : connectionRows.some((row) => (row.requester_id === user?.id ? row.recipient_id : row.requester_id) === person.user_id) ? "Request closed" : "Connect"}</button><button className="profile-edit-button discover-message" type="button" onClick={() => void startDirectConversation(person)} disabled={messageBusy}>Message <span>↗</span></button></div>
-              </article>)}</div> : <div className="empty card"><div className="empty-icon">⌕</div><h3>Find your UEW people</h3><p>Search by a student&apos;s name, username or programme to discover members and start a conversation.</p></div>}
+              </article>)}</div> : <div className="empty card"><div className="empty-icon">⌕</div><h3>Find your people</h3><p>Search by a student&apos;s name, username or programme to discover members and start a conversation.</p></div>}
             </div>
             <div className={activeView === "connections" ? "view-content" : "view-content hidden"}>
-              <div className="feed-heading"><div><span className="eyebrow">YOUR UEW NETWORK</span><h1>Connections</h1><p>Build your campus circle and keep up with classmates.</p></div><span className="campus-pill">UEW COMMUNITY</span></div>
+              <div className="feed-heading"><div><span className="eyebrow">YOUR NETWORK</span><h1>Connections</h1><p>Build your campus circle and keep up with classmates.</p></div><span className="campus-pill">CAMPUS COMMUNITY</span></div>
               <div className="connection-summary-grid">
                 <div className="connection-summary card"><strong>{connectionRows.filter((row) => row.status === "accepted").length}</strong><span>Connections</span></div>
                 <div className="connection-summary card"><strong>{connectionRows.filter((row) => row.status === "pending" && row.recipient_id === user?.id).length}</strong><span>Requests received</span></div>
                 <div className="connection-summary card"><strong>{connectionRows.filter((row) => row.status === "pending" && row.requester_id === user?.id).length}</strong><span>Requests sent</span></div>
               </div>
               <section className="connections-section"><div className="discover-results-heading"><h2>Received requests</h2><span>People who want to connect</span></div>
-                {connectionRows.filter((row) => row.status === "pending" && row.recipient_id === user?.id).map((row) => { const person = connectionProfiles[row.requester_id]; return <article className="connection-row card" key={row.id}><div className="connection-person">{avatarUrls[row.requester_id] ? <img className="discover-avatar" src={avatarUrls[row.requester_id]} alt=""/> : <div className="discover-avatar discover-avatar-fallback">{person ? initials(person.display_name) : "UEW"}</div>}<div className="discover-person-copy"><strong>{person?.display_name || "UEW member"}</strong><span>@{person?.username || "member"}</span></div></div><div className="connection-actions"><button className="primary-button" disabled={connectionBusy} onClick={() => void respondToConnection(row.id,"accepted")}>Accept</button><button className="profile-edit-button" disabled={connectionBusy} onClick={() => void respondToConnection(row.id,"declined")}>Decline</button></div></article>; })}
+                {connectionRows.filter((row) => row.status === "pending" && row.recipient_id === user?.id).map((row) => { const person = connectionProfiles[row.requester_id]; return <article className="connection-row card" key={row.id}><div className="connection-person">{avatarUrls[row.requester_id] ? <img className="discover-avatar" src={avatarUrls[row.requester_id]} alt=""/> : <div className="discover-avatar discover-avatar-fallback">{person ? initials(person.display_name) : "CC"}</div>}<div className="discover-person-copy"><strong>{person?.display_name || "Community member"}</strong><span>@{person?.username || "member"}</span></div></div><div className="connection-actions"><button className="primary-button" disabled={connectionBusy} onClick={() => void respondToConnection(row.id,"accepted")}>Accept</button><button className="profile-edit-button" disabled={connectionBusy} onClick={() => void respondToConnection(row.id,"declined")}>Decline</button></div></article>; })}
                 {!connectionRows.some((row) => row.status === "pending" && row.recipient_id === user?.id) && <div className="empty card"><p>No new connection requests.</p></div>}
               </section>
               <section className="connections-section"><div className="discover-results-heading"><h2>Your connections</h2><span>Accepted members</span></div>
-                {connectionRows.filter((row) => row.status === "accepted").map((row) => { const peerId = row.requester_id === user?.id ? row.recipient_id : row.requester_id; const person = connectionProfiles[peerId]; return <article className="connection-row card" key={row.id}><div className="connection-person">{avatarUrls[peerId] ? <img className="discover-avatar" src={avatarUrls[peerId]} alt=""/> : <div className="discover-avatar discover-avatar-fallback">{person ? initials(person.display_name) : "UEW"}</div>}<div className="discover-person-copy"><strong>{person?.display_name || "UEW member"}</strong><span>@{person?.username || "member"}</span></div></div><button className="profile-edit-button" onClick={() => person && void startDirectConversation(person)} disabled={!person || messageBusy}>Message</button></article>; })}
+                {connectionRows.filter((row) => row.status === "accepted").map((row) => { const peerId = row.requester_id === user?.id ? row.recipient_id : row.requester_id; const person = connectionProfiles[peerId]; return <article className="connection-row card" key={row.id}><div className="connection-person">{avatarUrls[peerId] ? <img className="discover-avatar" src={avatarUrls[peerId]} alt=""/> : <div className="discover-avatar discover-avatar-fallback">{person ? initials(person.display_name) : "CC"}</div>}<div className="discover-person-copy"><strong>{person?.display_name || "Community member"}</strong><span>@{person?.username || "member"}</span></div></div><button className="profile-edit-button" onClick={() => person && void startDirectConversation(person)} disabled={!person || messageBusy}>Message</button></article>; })}
                 {!connectionRows.some((row) => row.status === "accepted") && <div className="empty card"><p>Your accepted connections will appear here.</p><button className="primary-button" onClick={() => setActiveView("discover")}>Discover members</button></div>}
               </section>
               <section className="connections-section"><div className="discover-results-heading"><h2>Requests you&apos;ve sent</h2><span>Awaiting a response</span></div>
-                {connectionRows.filter((row) => row.status === "pending" && row.requester_id === user?.id).map((row) => <article className="connection-row card" key={row.id}><div className="connection-person"><div className="discover-avatar discover-avatar-fallback">UEW</div><div className="discover-person-copy"><strong>{connectionProfiles[row.recipient_id]?.display_name || "UEW member"}</strong><span>@{connectionProfiles[row.recipient_id]?.username || "member"}</span></div></div><span className="connection-pending">Pending</span></article>)}
+                {connectionRows.filter((row) => row.status === "pending" && row.requester_id === user?.id).map((row) => <article className="connection-row card" key={row.id}><div className="connection-person"><div className="discover-avatar discover-avatar-fallback">CC</div><div className="discover-person-copy"><strong>{connectionProfiles[row.recipient_id]?.display_name || "Community member"}</strong><span>@{connectionProfiles[row.recipient_id]?.username || "member"}</span></div></div><span className="connection-pending">Pending</span></article>)}
                 {!connectionRows.some((row) => row.status === "pending" && row.requester_id === user?.id) && <div className="empty card"><p>You haven&apos;t sent any requests yet.</p></div>}
               </section>
             </div>
@@ -1224,11 +1223,11 @@ export default function Home() {
                 <div className="groups-view">
                   <button className="back-link" onClick={() => { setActiveGroupId(null); setGroupPosts([]); }}>← All communities</button>
                   <div className="group-detail-card card">
-                    <div className="group-detail-top"><div><div className="eyebrow">{activeGroup.category || "UEW COMMUNITY"}</div><h1>{activeGroup.name}</h1><p>{activeGroup.description || "A place for UEW members to connect and share."}</p></div><span className="group-type-tag">{activeGroup.visibility === "public" ? "PUBLIC" : "PRIVATE"}</span></div>
+                    <div className="group-detail-top"><div><div className="eyebrow">{activeGroup.category || "CAMPUS COMMUNITY"}</div><h1>{activeGroup.name}</h1><p>{activeGroup.description || "A place for members to connect and share."}</p></div><span className="group-type-tag">{activeGroup.visibility === "public" ? "PUBLIC" : "PRIVATE"}</span></div>
                     <div className="group-detail-meta"><span>{groupMemberships[activeGroup.id] === "admin" ? "Community owner" : groupMemberships[activeGroup.id] === "moderator" ? "Moderator" : "Member"}</span><button className="profile-edit-button" disabled={groupBusy || activeGroup.owner_id === user.id} onClick={() => leaveGroup(activeGroup)}>{activeGroup.owner_id === user.id ? "You own this group" : "Leave group"}</button></div>
                   </div>
-                  {(activeGroup.owner_id === user.id || groupMemberships[activeGroup.id] === "moderator" || groupMemberships[activeGroup.id] === "admin") && <form className="group-invite-card card" onSubmit={sendGroupInvite}><div><strong>Invite a UEW member</strong><p>Enter their exact CampusConnect username.</p></div><div className="group-invite-fields"><input value={inviteUsername} onChange={(e) => setInviteUsername(e.target.value)} placeholder="e.g. ama_owusu" aria-label="Member username" required/><button className="primary-button compact" disabled={groupBusy || !inviteUsername.trim()}>{groupBusy ? "Sending…" : "Send invite"} <span>→</span></button></div></form>}
-                  {(activeGroup.owner_id === user.id || groupMemberships[activeGroup.id] === "admin") && <section className="group-members-card card"><div className="groups-section-heading"><h2>Members & moderators</h2><span>{groupMembers.length} members</span></div><div className="group-member-list">{groupMembers.map((member) => { const person = profiles[member.user_id]; return <div className="group-member-row" key={member.user_id}><div><strong>{person?.display_name || "UEW member"}</strong><span>@{person?.username || "campusmember"} · {member.role}</span></div>{activeGroup.owner_id === user.id && member.user_id !== user.id && <select aria-label={"Role for " + (person?.username || "member")} value={member.role === "moderator" ? "moderator" : "member"} disabled={groupBusy} onChange={(e) => void updateGroupMemberRole(member, e.target.value as "member" | "moderator")}><option value="member">Member</option><option value="moderator">Moderator</option></select>}</div>; })}</div></section>}
+                  {(activeGroup.owner_id === user.id || groupMemberships[activeGroup.id] === "moderator" || groupMemberships[activeGroup.id] === "admin") && <form className="group-invite-card card" onSubmit={sendGroupInvite}><div><strong>Invite a member</strong><p>Enter their exact CampusConnect username.</p></div><div className="group-invite-fields"><input value={inviteUsername} onChange={(e) => setInviteUsername(e.target.value)} placeholder="e.g. ama_owusu" aria-label="Member username" required/><button className="primary-button compact" disabled={groupBusy || !inviteUsername.trim()}>{groupBusy ? "Sending…" : "Send invite"} <span>→</span></button></div></form>}
+                  {(activeGroup.owner_id === user.id || groupMemberships[activeGroup.id] === "admin") && <section className="group-members-card card"><div className="groups-section-heading"><h2>Members & moderators</h2><span>{groupMembers.length} members</span></div><div className="group-member-list">{groupMembers.map((member) => { const person = profiles[member.user_id]; return <div className="group-member-row" key={member.user_id}><div><strong>{person?.display_name || "Community member"}</strong><span>@{person?.username || "campusmember"} · {member.role}</span></div>{activeGroup.owner_id === user.id && member.user_id !== user.id && <select aria-label={"Role for " + (person?.username || "member")} value={member.role === "moderator" ? "moderator" : "member"} disabled={groupBusy} onChange={(e) => void updateGroupMemberRole(member, e.target.value as "member" | "moderator")}><option value="member">Member</option><option value="moderator">Moderator</option></select>}</div>; })}</div></section>}
                   <form className="group-composer card" onSubmit={publishGroupPost}>
                     <textarea value={groupPostDraft} onChange={(e) => setGroupPostDraft(e.target.value)} maxLength={10000} placeholder={"Share something with " + activeGroup.name + "…"} aria-label="Write a group post"/>
                     <div className="group-composer-bottom"><span>Members only · {realtimeStatus === "connected" ? "Live updates on" : realtimeStatus === "connecting" ? "Connecting…" : "Live updates offline"}</span><button className="primary-button compact" disabled={groupBusy || !groupPostDraft.trim()}>{groupBusy ? "Please wait…" : "Share post"} <span>→</span></button></div>
@@ -1236,26 +1235,26 @@ export default function Home() {
                   <div className="group-posts">
                     {groupPosts.length === 0 ? <div className="empty card"><div className="empty-icon">◎</div><h3>Start the conversation</h3><p>Share the first update with members of this community.</p></div> : groupPosts.map((post) => {
                       const author = profiles[post.author_id];
-                      return <article className="post card" key={post.id}><div className="post-head">{avatarUrls[post.author_id] ? <img className="avatar avatar-image" src={avatarUrls[post.author_id]} alt=""/> : <div className="avatar">{initials(author?.display_name || "UEW")}</div>}<div className="post-author"><strong>{author?.display_name || "UEW member"}</strong><span>@{author?.username || "campusmember"} · {new Date(post.created_at).toLocaleString()}</span></div></div><p className="post-body">{post.body}</p>{(post.author_id === user.id || activeGroup.owner_id === user.id || groupMemberships[activeGroup.id] === "moderator" || groupMemberships[activeGroup.id] === "admin") && <div className="group-post-actions"><button disabled={groupBusy} onClick={() => deleteGroupPost(post)}>Delete post</button></div>}</article>;
+                      return <article className="post card" key={post.id}><div className="post-head">{avatarUrls[post.author_id] ? <img className="avatar avatar-image" src={avatarUrls[post.author_id]} alt=""/> : <div className="avatar">{initials(author?.display_name || "CC")}</div>}<div className="post-author"><strong>{author?.display_name || "Community member"}</strong><span>@{author?.username || "campusmember"} · {new Date(post.created_at).toLocaleString()}</span></div></div><p className="post-body">{post.body}</p>{(post.author_id === user.id || activeGroup.owner_id === user.id || groupMemberships[activeGroup.id] === "moderator" || groupMemberships[activeGroup.id] === "admin") && <div className="group-post-actions"><button disabled={groupBusy} onClick={() => deleteGroupPost(post)}>Delete post</button></div>}</article>;
                     })}
                   </div>
                 </div>
               ) : (
                 <div className="groups-view">
-                  {myGroupInvites.length > 0 && <section className="group-inbox card"><div className="groups-section-heading"><h2>Community invitations</h2><span>{myGroupInvites.length} pending</span></div>{myGroupInvites.map((invite) => <div className="group-invite-row" key={invite.id}><div><strong>{invite.group_name}</strong><span>Invited to join a UEW community</span></div><div><button className="primary-button compact" disabled={groupBusy} onClick={() => void respondToGroupInvite(invite, "accepted")}>Accept</button><button className="profile-edit-button" disabled={groupBusy} onClick={() => void respondToGroupInvite(invite, "declined")}>Decline</button></div></div>)}</section>}
-                  <div className="feed-heading"><div><div className="eyebrow">FIND YOUR PEOPLE</div><h1>Campus communities</h1><p className="muted">Join conversations and learn with people who share your interests.</p></div><div className="campus-pill"><span/> UEW GROUPS</div></div>
+                  {myGroupInvites.length > 0 && <section className="group-inbox card"><div className="groups-section-heading"><h2>Community invitations</h2><span>{myGroupInvites.length} pending</span></div>{myGroupInvites.map((invite) => <div className="group-invite-row" key={invite.id}><div><strong>{invite.group_name}</strong><span>Invited to join a community</span></div><div><button className="primary-button compact" disabled={groupBusy} onClick={() => void respondToGroupInvite(invite, "accepted")}>Accept</button><button className="profile-edit-button" disabled={groupBusy} onClick={() => void respondToGroupInvite(invite, "declined")}>Decline</button></div></div>)}</section>}
+                  <div className="feed-heading"><div><div className="eyebrow">FIND YOUR PEOPLE</div><h1>Campus communities</h1><p className="muted">Join conversations and learn with people who share your interests.</p></div><div className="campus-pill"><span/> YOUR GROUPS</div></div>
                   <form className="group-create-card card" onSubmit={createGroup}>
                     <div className="group-create-heading"><div><strong>Create a community</strong><p>Bring classmates and campus friends together around an interest.</p></div><span>✳</span></div>
-                    <div className="group-create-fields"><label>Community name<input required minLength={3} maxLength={80} value={groupName} onChange={(e) => setGroupName(e.target.value)} placeholder="e.g. UEW Level 200 Study Circle"/></label><label>Category<select value={groupCategory} onChange={(e) => setGroupCategory(e.target.value)}><option>Academic</option><option>Department</option><option>Hall & residence</option><option>Sports</option><option>Arts & culture</option><option>Career & business</option><option>Social</option></select></label><label>Visibility<select value={groupVisibility} onChange={(e) => setGroupVisibility(e.target.value as "public" | "private")}><option value="public">Public — anyone can join</option><option value="private">Private — invite only</option></select></label></div>
+                    <div className="group-create-fields"><label>Community name<input required minLength={3} maxLength={80} value={groupName} onChange={(e) => setGroupName(e.target.value)} placeholder="e.g. Level 200 Study Circle"/></label><label>Category<select value={groupCategory} onChange={(e) => setGroupCategory(e.target.value)}><option>Academic</option><option>Department</option><option>Hall & residence</option><option>Sports</option><option>Arts & culture</option><option>Career & business</option><option>Social</option></select></label><label>Visibility<select value={groupVisibility} onChange={(e) => setGroupVisibility(e.target.value as "public" | "private")}><option value="public">Public — anyone can join</option><option value="private">Private — invite only</option></select></label></div>
                     <label className="group-description-label">Description<textarea rows={2} maxLength={500} value={groupDescription} onChange={(e) => setGroupDescription(e.target.value)} placeholder="What is this community about?"/></label>
-                    <div className="group-create-footer"><span>{groupVisibility === "public" ? "Public communities can be joined by verified UEW members." : "Private communities are hidden until a member accepts an invitation."}</span><button className="primary-button compact" disabled={groupBusy || groupName.trim().length < 3}>{groupBusy ? "Creating…" : "Create community"} <span>→</span></button></div>
+                    <div className="group-create-footer"><span>{groupVisibility === "public" ? "Public communities can be joined by verified community members." : "Private communities are hidden until a member accepts an invitation."}</span><button className="primary-button compact" disabled={groupBusy || groupName.trim().length < 3}>{groupBusy ? "Creating…" : "Create community"} <span>→</span></button></div>
                   </form>
                   <div className="groups-section-heading"><h2>Explore communities</h2><span>{groups.length} found</span></div>
                   <div className="group-grid">
-                    {groups.length === 0 ? <div className="empty card"><div className="empty-icon">◎</div><h3>No communities yet</h3><p>Create the first UEW community and invite people to join.</p></div> : groups.map((group) => {
+                    {groups.length === 0 ? <div className="empty card"><div className="empty-icon">◎</div><h3>No communities yet</h3><p>Create the first community and invite people to join.</p></div> : groups.map((group) => {
                       const role = groupMemberships[group.id];
                       const owner = profiles[group.owner_id];
-                      return <article className="group-card card" key={group.id}><div className="group-card-top"><span className="group-icon">◎</span><span className="group-type-tag">{group.visibility === "public" ? "PUBLIC" : "PRIVATE"}</span></div><div className="eyebrow">{group.category || "CAMPUS COMMUNITY"}</div><h3>{group.name}</h3><p>{group.description || "A community for UEW members to connect."}</p><div className="group-card-owner">Created by {owner?.display_name || "UEW member"}</div><div className="group-card-actions">{role ? <><button className="primary-button compact" onClick={() => { setActiveGroupId(group.id); void loadGroupPosts(group.id); void loadGroupMembers(group.id); }}>Open community →</button>{group.owner_id !== user.id && <button className="profile-edit-button" disabled={groupBusy} onClick={() => leaveGroup(group)}>Leave</button>}</> : group.visibility === "public" ? <button className="primary-button compact" disabled={groupBusy} onClick={() => joinGroup(group)}>Join community <span>→</span></button> : <span className="invite-only">Invite only</span>}</div></article>;
+                      return <article className="group-card card" key={group.id}><div className="group-card-top"><span className="group-icon">◎</span><span className="group-type-tag">{group.visibility === "public" ? "PUBLIC" : "PRIVATE"}</span></div><div className="eyebrow">{group.category || "CAMPUS COMMUNITY"}</div><h3>{group.name}</h3><p>{group.description || "A community for members to connect."}</p><div className="group-card-owner">Created by {owner?.display_name || "Community member"}</div><div className="group-card-actions">{role ? <><button className="primary-button compact" onClick={() => { setActiveGroupId(group.id); void loadGroupPosts(group.id); void loadGroupMembers(group.id); }}>Open community →</button>{group.owner_id !== user.id && <button className="profile-edit-button" disabled={groupBusy} onClick={() => leaveGroup(group)}>Leave</button>}</> : group.visibility === "public" ? <button className="primary-button compact" disabled={groupBusy} onClick={() => joinGroup(group)}>Join community <span>→</span></button> : <span className="invite-only">Invite only</span>}</div></article>;
                     })}
                   </div>
                 </div>
@@ -1266,7 +1265,7 @@ export default function Home() {
           {notice && <div className="toast" role="status">{notice}</div>}
         </div>
       )}
-      <footer className="footer">CampusConnect <span>·</span> Built for the UEW community <span>·</span> Ghana</footer>
+      <footer className="footer">CampusConnect <span>·</span> Built for communities everywhere <span>·</span> Ghana</footer>
     </main>
   );
 }
